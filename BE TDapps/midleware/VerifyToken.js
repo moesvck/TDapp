@@ -2,33 +2,34 @@ import jwt from 'jsonwebtoken';
 
 export const verifyToken = (req, res, next) => {
   try {
-    // 🔍 Ambil header Authorization (biasanya formatnya: "Bearer <token>")
     const authHeader = req.headers['authorization'];
 
-    // 🚫 Jika tidak ada header
     if (!authHeader) {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    // 🔓 Pisahkan token dari "Bearer "
     const token = authHeader.split(' ')[1];
 
-    // 🚫 Jika token tidak ada
     if (!token) {
       return res.status(401).json({ message: 'Access token missing' });
     }
 
-    // ✅ Verifikasi token menggunakan secret dari .env
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
       if (err) {
         console.error('JWT verification error:', err);
-        return res.status(403).json({ message: 'Invalid or expired token' });
+
+        // 🔧 Bisa dibedakan antara token expired dan invalid
+        if (err.name === 'TokenExpiredError') {
+          return res.status(403).json({ message: 'Token expired' });
+        } else if (err.name === 'JsonWebTokenError') {
+          return res.status(403).json({ message: 'Invalid token' });
+        } else {
+          return res.status(403).json({ message: 'Token verification failed' });
+        }
       }
 
-      // 🧩 Simpan data user ke req (supaya bisa diakses di endpoint lain)
-      req.user = decoded; // berisi { userId, name, username, role, iat, exp }
-
-      next(); // lanjut ke endpoint berikutnya
+      req.user = decoded;
+      next();
     });
   } catch (error) {
     console.error('verifyToken error:', error);

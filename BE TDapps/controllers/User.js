@@ -4,13 +4,21 @@ import jwt from 'jsonwebtoken';
 
 export const getUsers = async (req, res) => {
   try {
+    // Cek role user dari token
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        message: 'Access denied. Admin role required.',
+      });
+    }
+
     const users = await Users.findAll({
-      attributes: ['id', 'name', 'username', 'role'], //hanya ambil id, name, username, role tanpa memunculkan password dan refresh token
+      attributes: ['id', 'name', 'username', 'role'],
     });
 
     res.json(users);
   } catch (error) {
     console.log(error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 

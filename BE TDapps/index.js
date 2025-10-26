@@ -15,8 +15,8 @@ try {
   await db.authenticate();
   console.log('✅ Database connected...');
   // await Users.sync(); // aktifkan jika perlu auto-create table
-  await Acara.sync();
-  await PDU.sync();
+  // await Acara.sync();
+  // await PDU.sync();
 } catch (error) {
   console.error('❌ Database connection error:', error);
 }
