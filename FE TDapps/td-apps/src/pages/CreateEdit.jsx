@@ -157,7 +157,7 @@ const CreateEdit = () => {
                       required
                     />
                     <label className="form-check-label" htmlFor="internal">
-                      Internal
+                      Live
                     </label>
                   </div>
                   <div className="form-check">
@@ -171,7 +171,7 @@ const CreateEdit = () => {
                       onChange={handleInputChange}
                     />
                     <label className="form-check-label" htmlFor="eksternal">
-                      Eksternal
+                      Tipping
                     </label>
                   </div>
                 </div>

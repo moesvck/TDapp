@@ -5,10 +5,21 @@ import router from './routes/index.js';
 import cookieParser from 'cookie-parser';
 import Acara from './models/AcaraModels.js';
 import cors from 'cors';
-import PDU from './models/pduModels.js';
+import fileUpload from 'express-fileupload';
+import PDU from './models/PDUModels.js';
 
 dotenv.config();
 const app = express();
+
+app.use(
+  fileUpload({
+    createParentPath: true,
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB
+    },
+    useTempFiles: false,
+  })
+);
 
 // 🧠 Koneksi Database
 try {
@@ -32,8 +43,8 @@ app.use(
 );
 
 app.use(cookieParser());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // 🛣️ Routes
 app.use(router);

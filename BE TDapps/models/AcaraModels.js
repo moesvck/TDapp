@@ -1,4 +1,3 @@
-// Di file model acara.js
 import { Sequelize } from 'sequelize';
 import db from '../config/Database.js';
 
@@ -12,18 +11,25 @@ const Acara = db.define(
       primaryKey: true,
       autoIncrement: true,
     },
+    userId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
     tanggalAcara: {
-      type: DataTypes.STRING(255),
-      allowNull: true,
+      type: DataTypes.DATE,
+      allowNull: false,
     },
     idPDU: {
-      type: DataTypes.INTEGER, // Ganti NUMBER dengan INTEGER
+      type: DataTypes.INTEGER,
       allowNull: true,
-      unique: true, // Tambahkan ini
+    },
+    namaAcara: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
     },
     tipeAcara: {
       type: DataTypes.STRING(255),
-      allowNull: true,
+      allowNull: false,
     },
     kendala: {
       type: DataTypes.STRING(255),
@@ -40,7 +46,7 @@ const Acara = db.define(
   },
   {
     tableName: 'acara',
-    timestamps: true, // akan otomatis membuat createdAt dan updatedAt
+    timestamps: true,
   }
 );
 
