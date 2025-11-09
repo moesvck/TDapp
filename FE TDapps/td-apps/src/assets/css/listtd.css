@@ -10,3 +10,71 @@
   height: 20px;
   margin: 0 5px;
 }
+/* Di file assets/css/listtd.css */
+
+/* Style untuk baris dengan kendala (merah) */
+.table tbody tr.alert-danger {
+  background-color: #f8d7da !important;
+  border-left: 4px solid #dc3545;
+}
+
+.table tbody tr.alert-danger:hover {
+  background-color: #f5c6cb !important;
+}
+
+/* Style untuk badge status */
+.badge.bg-danger {
+  background-color: #dc3545 !important;
+}
+
+.badge.bg-success {
+  background-color: #198754 !important;
+}
+
+.badge.bg-info {
+  background-color: #0dcaf0 !important;
+  color: #000 !important;
+}
+
+/* Style untuk icon */
+.icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Style untuk modal */
+.modal-content {
+  border-radius: 10px;
+}
+
+.modal-header {
+  border-bottom: 2px solid #dee2e6;
+}
+
+.modal-footer {
+  border-top: 2px solid #dee2e6;
+}
+
+/* Style untuk form switch */
+.form-check-input:checked {
+  background-color: #198754;
+  border-color: #198754;
+}
+
+/* Style untuk table responsive */
+.table-responsive {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.table thead th {
+  background-color: #343a40;
+  color: white;
+  border-bottom: 2px solid #dee2e6;
+}
+
+/* Loading spinner */
+.spinner-border {
+  width: 1.5rem;
+  height: 1.5rem;
+}

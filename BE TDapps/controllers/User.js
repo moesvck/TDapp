@@ -4,10 +4,10 @@ import jwt from 'jsonwebtoken';
 
 export const getUsers = async (req, res) => {
   try {
-    // Cek role user dari token
-    if (req.user.role !== 'admin') {
+    // Cek role user dari token - HANYA admin dan staff yang boleh akses
+    if (req.user.role !== 'admin' && req.user.role !== 'staff') {
       return res.status(403).json({
-        message: 'Access denied. Admin role required.',
+        message: 'Access denied. Admin or Staff role required.',
       });
     }
 
@@ -15,9 +15,35 @@ export const getUsers = async (req, res) => {
       attributes: ['id', 'name', 'username', 'role'],
     });
 
-    res.json(users);
+    res.json({
+      message: 'Users retrieved successfully',
+      data: users,
+      count: users.length,
+    });
   } catch (error) {
-    console.log(error);
+    console.error('Error in getUsers:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+export const getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await Users.findOne({
+      where: { id },
+      attributes: ['id', 'name', 'username', 'role'],
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      message: 'User retrieved successfully',
+      data: user,
+    });
+  } catch (error) {
+    console.error('Error in getUserById:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

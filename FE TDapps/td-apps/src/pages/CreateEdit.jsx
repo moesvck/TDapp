@@ -1,33 +1,496 @@
-import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
+import { getToken, setToken } from '../services/pduService';
 
 const CreateEdit = () => {
   const [addPDU, setAddPDU] = useState(false);
+  const [pduList, setPduList] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const navigate = useNavigate();
+  const { isAuthenticated, logout, login } = useAuth();
+  const token = getToken();
+
+  // Konstanta untuk tipe file yang diizinkan
+  const ALLOWED_FILE_TYPES = {
+    images: ['image/jpeg', 'image/jpg', 'image/png'],
+    pdf: ['application/pdf'],
+    all: ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'],
+  };
+
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
   const [formData, setFormData] = useState({
-    namaPDU: '',
+    namePDU: '',
+    buktiSuratPerintahOperasional: null,
+    buktiRondownAcaraHarian: null,
+    idPDU: '',
     namaAcara: '',
     tipeAcara: '',
-    kendala: 'Tidak',
-    buktiDukungan: null,
+    kendala: false,
+    buktiDukung: null,
     keteranganKendala: '',
   });
 
-  // Dummy data untuk dropdown PDU
-  const [pduList] = useState([{ id: 1, nama: 'PDU A' }]);
+  // Fungsi validasi file
+  const validateFile = (file, fieldName) => {
+    // Validasi tipe file
+    if (!ALLOWED_FILE_TYPES.all.includes(file.type)) {
+      throw new Error(
+        `${fieldName} hanya menerima file gambar (JPG, JPEG, PNG) dan PDF`
+      );
+    }
+
+    // Validasi ukuran file
+    if (file.size > MAX_FILE_SIZE) {
+      throw new Error(`${fieldName} maksimal 10MB`);
+    }
+
+    return true;
+  };
+
+  // Check authentication on component mount
+  useEffect(() => {
+    checkAuthentication();
+  }, []);
+
+  // Fungsi untuk refresh token
+  const refreshToken = async () => {
+    try {
+      console.log('Attempting to refresh token...');
+      const response = await axios.get('http://localhost:3000/token', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const newToken = response.data.token;
+      console.log('Token refreshed successfully');
+
+      // Simpan token baru
+      setToken(newToken);
+      login(newToken);
+
+      return newToken;
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      throw error;
+    }
+  };
+
+  // Fungsi untuk membuat request dengan auto refresh token
+  const makeAuthenticatedRequest = async (requestFn) => {
+    try {
+      // Coba request pertama
+      return await requestFn();
+    } catch (error) {
+      // Jika error 401 (Unauthorized), coba refresh token
+      if (error.response?.status === 401) {
+        console.log('Token expired, attempting refresh...');
+        try {
+          const newToken = await refreshToken();
+
+          // Coba request lagi dengan token baru
+          const retryRequest = async () => {
+            // Recreate the request function with new token
+            if (typeof requestFn === 'function') {
+              return await requestFn();
+            }
+            return requestFn;
+          };
+
+          return await retryRequest();
+        } catch (refreshError) {
+          console.error('Token refresh failed, logging out:', refreshError);
+          logout();
+          navigate('/login');
+          throw refreshError;
+        }
+      }
+      throw error;
+    }
+  };
+
+  const checkAuthentication = async () => {
+    // Cek 1: Apakah ada token di localStorage?
+    if (!token) {
+      console.log('No token found, redirecting to login');
+      navigate('/login');
+      return;
+    }
+
+    // Cek 2: Apakah user authenticated di context?
+    if (!isAuthenticated) {
+      console.log('User not authenticated in context, redirecting to login');
+      navigate('/login');
+      return;
+    }
+
+    try {
+      // Cek 3: Coba fetch data PDU untuk verifikasi token dengan auto refresh
+      await makeAuthenticatedRequest(async () => {
+        await fetchTodayPDUList();
+      });
+
+      setAuthChecked(true);
+    } catch (error) {
+      console.error('Authentication check failed:', error);
+
+      if (error.response?.status === 401) {
+        alert('Session telah berakhir. Silakan login kembali.');
+      } else {
+        alert('Terjadi kesalahan. Silakan login kembali.');
+      }
+
+      logout();
+      navigate('/login');
+    }
+  };
+
+  // Fungsi untuk mendapatkan tanggal hari ini dalam format YYYY-MM-DD
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
+  // Fungsi untuk memfilter PDU hanya yang dibuat hari ini
+  const filterTodayPDU = (pduArray) => {
+    const today = getTodayDate();
+    const todayPDU = pduArray.filter((pdu) => {
+      const pduDate = new Date(pdu.tanggal).toISOString().split('T')[0];
+      return pduDate === today;
+    });
+    return todayPDU;
+  };
+
+  // Fetch data PDU dan filter hanya yang hari ini
+  const fetchTodayPDUList = async () => {
+    try {
+      const today = getTodayDate();
+      const currentToken = getToken();
+
+      const response = await axios.get(
+        `http://localhost:3000/pdu?date=${today}`,
+        {
+          headers: {
+            Authorization: `Bearer ${currentToken}`,
+          },
+        }
+      );
+
+      let todayPDUList = response.data.data || [];
+
+      // Jika response masih mengembalikan data bulanan, filter manual
+      if (
+        todayPDUList.some((pdu) => {
+          const pduDate = new Date(pdu.tanggal).toISOString().split('T')[0];
+          return pduDate !== today;
+        })
+      ) {
+        todayPDUList = filterTodayPDU(todayPDUList);
+      }
+
+      setPduList(todayPDUList);
+    } catch (error) {
+      console.error('Error fetching PDU with date filter:', error);
+
+      // Fallback: fetch semua data lalu filter manual
+      try {
+        const currentToken = getToken();
+        const response = await axios.get('http://localhost:3000/pdu', {
+          headers: {
+            Authorization: `Bearer ${currentToken}`,
+          },
+        });
+
+        const todayPDUList = filterTodayPDU(response.data.data || []);
+        setPduList(todayPDUList);
+      } catch (fallbackError) {
+        console.error('Error in fallback PDU fetch:', fallbackError);
+        throw fallbackError;
+      }
+    }
+  };
 
   const handleInputChange = (e) => {
-    const { name, value, type, files } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === 'file' ? files[0] : value,
-    }));
+    const { name, value, type, files, checked } = e.target;
+
+    setFormData((prev) => {
+      const newFormData = {
+        ...prev,
+        [name]:
+          type === 'checkbox' ? checked : type === 'file' ? files[0] : value,
+      };
+
+      if (name === 'kendala' && !checked) {
+        newFormData.buktiDukung = null;
+        newFormData.keteranganKendala = '';
+      }
+
+      return newFormData;
+    });
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    // Handle form submission logic here
-    console.log('Form data:', formData);
+  // Fungsi khusus untuk handle file upload dengan validasi
+  const handleFileChange = (e) => {
+    const { name, files } = e.target;
+    const file = files[0];
+
+    if (!file) {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: null,
+      }));
+      return;
+    }
+
+    try {
+      // Tentukan nama field untuk pesan error
+      let fieldName = '';
+      switch (name) {
+        case 'buktiSuratPerintahOperasional':
+          fieldName = 'Surat Perintah Operasional';
+          break;
+        case 'buktiRondownAcaraHarian':
+          fieldName = 'Rundown Acara Harian';
+          break;
+        case 'buktiDukung':
+          fieldName = 'Bukti Dukungan Kendala';
+          break;
+        default:
+          fieldName = 'File';
+      }
+
+      // Validasi file
+      validateFile(file, fieldName);
+
+      // Jika validasi berhasil, set file
+      setFormData((prev) => ({
+        ...prev,
+        [name]: file,
+      }));
+    } catch (error) {
+      alert(error.message);
+      // Reset input file
+      e.target.value = '';
+      setFormData((prev) => ({
+        ...prev,
+        [name]: null,
+      }));
+    }
   };
+
+  const handleKendalaChange = (e) => {
+    const hasKendala = e.target.value === 'true';
+
+    setFormData((prev) => {
+      const newFormData = {
+        ...prev,
+        kendala: hasKendala,
+      };
+
+      if (!hasKendala) {
+        newFormData.buktiDukung = null;
+        newFormData.keteranganKendala = '';
+      }
+
+      return newFormData;
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!token || !isAuthenticated) {
+      alert('Anda harus login terlebih dahulu');
+      navigate('/login');
+      return;
+    }
+
+    // Validasi form
+    if (!addPDU && !formData.idPDU) {
+      alert('Pilih PDU yang sudah ada');
+      return;
+    }
+
+    if (addPDU && !formData.namePDU) {
+      alert('Nama PDU wajib diisi');
+      return;
+    }
+
+    if (!formData.namaAcara) {
+      alert('Nama Acara wajib diisi');
+      return;
+    }
+
+    if (!formData.tipeAcara) {
+      alert('Tipe Acara wajib dipilih');
+      return;
+    }
+
+    if (formData.kendala === true) {
+      if (!formData.buktiDukung) {
+        alert('Bukti Dukungan Kendala wajib diupload');
+        return;
+      }
+      if (!formData.keteranganKendala.trim()) {
+        alert('Keterangan Kendala wajib diisi');
+        return;
+      }
+    }
+
+    // Validasi file untuk PDU baru
+    if (addPDU) {
+      if (!formData.buktiSuratPerintahOperasional) {
+        alert('Surat Perintah Operasional wajib diupload');
+        return;
+      }
+      if (!formData.buktiRondownAcaraHarian) {
+        alert('Rundown Acara Harian wajib diupload');
+        return;
+      }
+    }
+
+    setLoading(true);
+
+    try {
+      // Gunakan makeAuthenticatedRequest untuk handle token refresh otomatis
+      await makeAuthenticatedRequest(async () => {
+        const currentToken = getToken();
+        const headers = {
+          Authorization: `Bearer ${currentToken}`,
+          'Content-Type': 'multipart/form-data',
+        };
+
+        if (addPDU) {
+          await createPDUAndAcara(headers);
+        } else {
+          await createAcara(headers);
+        }
+
+        alert(
+          addPDU ? 'PDU dan Acara berhasil dibuat!' : 'Acara berhasil dibuat!'
+        );
+        navigate('/');
+      });
+    } catch (error) {
+      console.error('Error submitting form:', error);
+
+      if (error.response?.status === 401) {
+        alert('Session expired. Silakan login kembali.');
+        logout();
+        navigate('/login');
+      } else {
+        alert(
+          'Gagal menyimpan data: ' +
+            (error.response?.data?.message || error.message)
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createPDUAndAcara = async (headers) => {
+    if (
+      !formData.buktiSuratPerintahOperasional ||
+      !formData.buktiRondownAcaraHarian
+    ) {
+      throw new Error('Semua file PDU harus diupload');
+    }
+
+    const pduFormData = new FormData();
+    pduFormData.append('namePDU', formData.namePDU);
+    pduFormData.append(
+      'buktiSuratPerintahOperasional',
+      formData.buktiSuratPerintahOperasional
+    );
+    pduFormData.append(
+      'buktiRondownAcaraHarian',
+      formData.buktiRondownAcaraHarian
+    );
+
+    const pduResponse = await axios.post(
+      'http://localhost:3000/pdu',
+      pduFormData,
+      { headers }
+    );
+
+    const newPDUId = pduResponse.data.data.id;
+
+    const acaraData = {
+      idPDU: newPDUId,
+      namaAcara: formData.namaAcara,
+      tipeAcara: formData.tipeAcara,
+      kendala: formData.kendala,
+    };
+
+    if (formData.kendala === true) {
+      if (formData.buktiDukung) {
+        acaraData.buktiDukung = formData.buktiDukung;
+      }
+      if (formData.keteranganKendala) {
+        acaraData.keteranganKendala = formData.keteranganKendala;
+      }
+    }
+
+    const acaraFormData = new FormData();
+    Object.keys(acaraData).forEach((key) => {
+      acaraFormData.append(key, acaraData[key]);
+    });
+
+    await axios.post('http://localhost:3000/acara', acaraFormData, { headers });
+  };
+
+  const createAcara = async (headers) => {
+    const acaraData = {
+      idPDU: formData.idPDU,
+      namaAcara: formData.namaAcara,
+      tipeAcara: formData.tipeAcara,
+      kendala: formData.kendala,
+    };
+
+    if (formData.kendala === true) {
+      if (formData.buktiDukung) {
+        acaraData.buktiDukung = formData.buktiDukung;
+      }
+      if (formData.keteranganKendala) {
+        acaraData.keteranganKendala = formData.keteranganKendala;
+      }
+    }
+
+    const acaraFormData = new FormData();
+    Object.keys(acaraData).forEach((key) => {
+      acaraFormData.append(key, acaraData[key]);
+    });
+
+    await axios.post('http://localhost:3000/acara', acaraFormData, { headers });
+  };
+
+  const handleCancel = () => {
+    navigate('/');
+  };
+
+  // Tampilkan loading sampai authentication check selesai
+  if (!authChecked) {
+    return (
+      <div className="container mt-4">
+        <div
+          className="d-flex justify-content-center align-items-center"
+          style={{ height: '50vh' }}
+        >
+          <div className="text-center">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+            <div className="mt-2">Memverifikasi authentication...</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mt-4">
@@ -47,29 +510,30 @@ const CreateEdit = () => {
               </label>
 
               {addPDU ? (
-                // Input text ketika addPDU true
                 <input
                   type="text"
                   className="form-control"
                   placeholder="Enter name PDU"
-                  name="namaPDU"
-                  value={formData.namaPDU}
+                  name="namePDU"
+                  value={formData.namePDU}
                   onChange={handleInputChange}
                   required
                 />
               ) : (
-                // Dropdown ketika addPDU false
                 <select
                   className="form-select"
-                  name="namaPDU"
-                  value={formData.namaPDU}
+                  name="idPDU"
+                  value={formData.idPDU}
                   onChange={handleInputChange}
                   required
+                  disabled={pduList.length === 0}
                 >
-                  <option value="">Pilih PDU</option>
+                  <option value="">
+                    Pilih PDU ({pduList.length} tersedia hari ini)
+                  </option>
                   {pduList.map((pdu) => (
-                    <option key={pdu.id} value={pdu.nama}>
-                      {pdu.nama}
+                    <option key={pdu.id} value={pdu.id}>
+                      {pdu.namePDU}
                     </option>
                   ))}
                 </select>
@@ -84,12 +548,14 @@ const CreateEdit = () => {
               </button>
             </div>
             <small className="text-muted">
-              {addPDU ? 'Masukkan nama PDU baru' : 'Pilih PDU yang sudah ada'}
+              {addPDU
+                ? 'Masukkan nama PDU baru'
+                : `Hanya menampilkan PDU yang dibuat hari ini (${getTodayDate()})`}
             </small>
           </div>
 
-          {addPDU ? (
-            /* Upload Documents Section - untuk PDU baru */
+          {/* Section untuk upload dokumen PDU BARU */}
+          {addPDU && (
             <>
               <div className="mb-3 col-md-6">
                 <label className="form-label">
@@ -99,11 +565,14 @@ const CreateEdit = () => {
                 <input
                   className="form-control"
                   type="file"
-                  name="suratOperasional"
-                  onChange={handleInputChange}
-                  accept=".pdf,.doc,.docx"
-                  required
+                  name="buktiSuratPerintahOperasional"
+                  onChange={handleFileChange}
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  required={addPDU}
                 />
+                <small className="text-muted">
+                  Format: PDF, JPG, JPEG, PNG (Maksimal 10MB)
+                </small>
               </div>
               <div className="mb-3 col-md-6">
                 <label className="form-label">
@@ -113,113 +582,154 @@ const CreateEdit = () => {
                 <input
                   className="form-control"
                   type="file"
-                  name="rundownAcara"
-                  onChange={handleInputChange}
-                  accept=".pdf,.doc,.docx"
-                  required
+                  name="buktiRondownAcaraHarian"
+                  onChange={handleFileChange}
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  required={addPDU}
                 />
+                <small className="text-muted">
+                  Format: PDF, JPG, JPEG, PNG (Maksimal 10MB)
+                </small>
               </div>
             </>
-          ) : (
-            /* Event Details Section - untuk PDU yang sudah ada */
-            <>
-              {/* Nama Acara */}
-              <div className="mb-3 col-md-6">
-                <label className="form-label">
-                  Nama Acara<span className="text-danger">*</span>
-                </label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Enter nama acara"
-                  name="namaAcara"
-                  value={formData.namaAcara}
-                  onChange={handleInputChange}
-                  required
-                />
-              </div>
+          )}
 
-              {/* Tipe Acara */}
-              <div className="mb-3 col-md-6">
-                <label className="form-label d-block">
-                  Tipe Acara<span className="text-danger">*</span>
-                </label>
-                <div className="d-flex gap-3">
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="radio"
-                      name="tipeAcara"
-                      value="internal"
-                      id="internal"
-                      checked={formData.tipeAcara === 'internal'}
-                      onChange={handleInputChange}
-                      required
-                    />
-                    <label className="form-check-label" htmlFor="internal">
-                      Live
-                    </label>
-                  </div>
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="radio"
-                      name="tipeAcara"
-                      value="eksternal"
-                      id="eksternal"
-                      checked={formData.tipeAcara === 'eksternal'}
-                      onChange={handleInputChange}
-                    />
-                    <label className="form-check-label" htmlFor="eksternal">
-                      Tipping
-                    </label>
-                  </div>
+          {/* Section untuk data ACARA - SELALU TAMPIL */}
+          <>
+            {/* Nama Acara */}
+            <div className="mb-3 col-md-6">
+              <label className="form-label">
+                Nama Acara<span className="text-danger">*</span>
+              </label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Enter nama acara"
+                name="namaAcara"
+                value={formData.namaAcara}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+
+            {/* Tipe Acara */}
+            <div className="mb-3 col-md-6">
+              <label className="form-label d-block">
+                Tipe Acara<span className="text-danger">*</span>
+              </label>
+              <div className="d-flex gap-3 flex-wrap">
+                <div className="form-check">
+                  <input
+                    className="form-check-input"
+                    type="radio"
+                    name="tipeAcara"
+                    value="Live"
+                    id="live"
+                    checked={formData.tipeAcara === 'Live'}
+                    onChange={handleInputChange}
+                    required
+                  />
+                  <label className="form-check-label" htmlFor="live">
+                    Live
+                  </label>
+                </div>
+                <div className="form-check">
+                  <input
+                    className="form-check-input"
+                    type="radio"
+                    name="tipeAcara"
+                    value="Tipping"
+                    id="tipping"
+                    checked={formData.tipeAcara === 'Tipping'}
+                    onChange={handleInputChange}
+                  />
+                  <label className="form-check-label" htmlFor="tipping">
+                    Tipping
+                  </label>
+                </div>
+                <div className="form-check">
+                  <input
+                    className="form-check-input"
+                    type="radio"
+                    name="tipeAcara"
+                    value="Playback"
+                    id="playback"
+                    checked={formData.tipeAcara === 'Playback'}
+                    onChange={handleInputChange}
+                  />
+                  <label className="form-check-label" htmlFor="playback">
+                    Playback
+                  </label>
                 </div>
               </div>
+            </div>
 
-              {/* Kendala */}
-              <div className="mb-3 col-12">
-                <label className="form-label">
-                  Apakah ada kendala?<span className="text-danger">*</span>
-                </label>
-                <select
-                  className="form-select"
-                  name="kendala"
-                  value={formData.kendala}
-                  onChange={handleInputChange}
-                  required
-                >
-                  <option value="Tidak">Tidak</option>
-                  <option value="Ya">Ya</option>
-                </select>
+            {/* Kendala */}
+            <div className="mb-3 col-12">
+              <label className="form-label">
+                Apakah ada kendala?<span className="text-danger">*</span>
+              </label>
+              <div className="d-flex gap-3">
+                <div className="form-check">
+                  <input
+                    className="form-check-input"
+                    type="radio"
+                    name="kendala"
+                    value="false"
+                    id="tidakKendala"
+                    checked={formData.kendala === false}
+                    onChange={handleKendalaChange}
+                    required
+                  />
+                  <label className="form-check-label" htmlFor="tidakKendala">
+                    Tidak
+                  </label>
+                </div>
+                <div className="form-check">
+                  <input
+                    className="form-check-input"
+                    type="radio"
+                    name="kendala"
+                    value="true"
+                    id="adaKendala"
+                    checked={formData.kendala === true}
+                    onChange={handleKendalaChange}
+                  />
+                  <label className="form-check-label" htmlFor="adaKendala">
+                    Ya
+                  </label>
+                </div>
               </div>
+            </div>
 
-              {/* Bukti Dukungan Kendala */}
+            {/* Bukti Dukungan Kendala - Hanya tampil jika kendala = true */}
+            {formData.kendala === true && (
               <div className="mb-3 col-md-6">
                 <label className="form-label">
                   Bukti Dukungan Kendala
-                  {formData.kendala === 'Ya' && (
-                    <span className="text-danger">*</span>
-                  )}
+                  <span className="text-danger">*</span>
                 </label>
                 <input
                   className="form-control"
                   type="file"
-                  name="buktiDukungan"
-                  onChange={handleInputChange}
-                  disabled={formData.kendala !== 'Ya'}
+                  name="buktiDukung"
+                  onChange={handleFileChange}
                   accept=".jpg,.jpeg,.png,.pdf"
-                  required={formData.kendala === 'Ya'}
+                  required={formData.kendala === true}
                 />
+                <small className="text-muted">
+                  Upload bukti dukungan kendala (wajib) - Format: JPG, JPEG,
+                  PNG, PDF (Maksimal 10MB)
+                </small>
               </div>
+            )}
 
-              {/* Keterangan Kendala */}
+            {/* Keterangan Kendala - Hanya tampil jika kendala = true */}
+            {formData.kendala === true && (
               <div className="mb-3 col-12">
                 <label className="form-label">
                   Kendala terkait Acara
-                  {formData.kendala === 'Ya' && (
-                    <span className="text-danger">*</span>
-                  )}
+                  <span className="text-danger">*</span>
                 </label>
                 <textarea
                   className="form-control"
@@ -227,26 +737,33 @@ const CreateEdit = () => {
                   name="keteranganKendala"
                   value={formData.keteranganKendala}
                   onChange={handleInputChange}
-                  disabled={formData.kendala !== 'Ya'}
-                  placeholder={
-                    formData.kendala === 'Ya'
-                      ? 'Jelaskan kendala yang dialami...'
-                      : 'Tidak ada kendala'
-                  }
-                  required={formData.kendala === 'Ya'}
+                  placeholder="Jelaskan kendala yang dialami..."
+                  required={formData.kendala === true}
                 ></textarea>
+                <small className="text-muted">
+                  Jelaskan kendala yang dialami (wajib)
+                </small>
               </div>
-            </>
-          )}
+            )}
+          </>
 
           {/* Submit Button */}
           <div className="mb-3 col-12">
-            <button type="submit" className="btn btn-success me-2">
-              Create
+            <button
+              type="submit"
+              className="btn btn-success me-2"
+              disabled={loading}
+            >
+              {loading ? 'Loading...' : 'Create'}
             </button>
-            <NavLink to={'/listtd'} className="btn btn-secondary">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleCancel}
+              disabled={loading}
+            >
               Cancel
-            </NavLink>
+            </button>
           </div>
         </div>
       </form>

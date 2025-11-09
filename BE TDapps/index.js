@@ -7,9 +7,15 @@ import Acara from './models/AcaraModels.js';
 import cors from 'cors';
 import fileUpload from 'express-fileupload';
 import PDU from './models/PDUModels.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 const app = express();
+
+// 🎯 Fix untuk __dirname di ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 app.use(
   fileUpload({
@@ -46,10 +52,20 @@ app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// 🗂️ STATIC FILE SERVING - TAMBAHKAN INI
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Debug middleware untuk melihat request ke static files
+app.use('/uploads', (req, res, next) => {
+  console.log('📁 Static file request:', req.url);
+  next();
+});
+
 // 🛣️ Routes
 app.use(router);
 
 // 🚀 Jalankan server
 app.listen(3000, () => {
   console.log('🚀 Server running at http://localhost:3000');
+  console.log('📁 Static files served from:', path.join(__dirname, 'uploads'));
 });

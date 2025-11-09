@@ -102,7 +102,7 @@ export const createAcara = async (req, res) => {
   }
 };
 
-//get all acara oleh admin
+//get all acara oleh admin dan staff
 export const getAllAcara = async (req, res) => {
   try {
     console.log('🟢 getAllAcara (Admin) controller called');
@@ -113,7 +113,7 @@ export const getAllAcara = async (req, res) => {
     }
 
     // ✅ CEK ROLE ADMIN
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && req.user.role !== 'staff') {
       return res.status(403).json({
         message: 'Access denied. Admin role required.',
       });
@@ -197,7 +197,7 @@ export const updateAcara = async (req, res) => {
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
-    const { id } = req.params; // ID Acara yang akan diupdate
+    const { id } = req.params;
     const { namaAcara, tipeAcara, kendala, keteranganKendala, idPDU } =
       req.body;
     const user = req.user;
@@ -216,7 +216,7 @@ export const updateAcara = async (req, res) => {
     const existingAcara = await Acara.findOne({
       where: {
         id: id,
-        userId: user.userId, // Hanya bisa update acara milik sendiri
+        userId: user.userId,
       },
     });
 
@@ -234,7 +234,7 @@ export const updateAcara = async (req, res) => {
       const existingPDU = await PDU.findOne({
         where: {
           id: idPDU,
-          userId: user.userId, // Pastikan PDU milik user yang login
+          userId: user.userId,
         },
       });
 
@@ -246,9 +246,30 @@ export const updateAcara = async (req, res) => {
       console.log('✅ PDU validation passed');
     }
 
-    // ✅ KONVERSI kendala KE BOOLEAN
-    const hasKendala = kendala === 'true' || kendala === true;
-    console.log('🔧 Kendala status:', hasKendala);
+    // ✅ PERBAIKAN: KONVERSI kendala KE FORMAT YANG BENAR
+    let hasKendala = false;
+    let kendalaStatus = 'Tidak Ada Kendala';
+
+    if (kendala !== undefined) {
+      // Handle berbagai format kendala dari frontend
+      if (kendala === 'true' || kendala === true || kendala === '1') {
+        hasKendala = true;
+        kendalaStatus = 'Ada Kendala';
+      } else if (kendala === 'false' || kendala === false || kendala === '0') {
+        hasKendala = false;
+        kendalaStatus = 'Tidak Ada Kendala';
+      } else if (kendala === 'Ada Kendala' || kendala === 'Tidak Ada Kendala') {
+        // Jika sudah dalam format yang benar
+        kendalaStatus = kendala;
+        hasKendala = kendala === 'Ada Kendala';
+      }
+    }
+
+    console.log('🔧 Kendala status:', {
+      input: kendala,
+      hasKendala,
+      kendalaStatus,
+    });
 
     // ✅ PREPARE DATA UPDATE
     const updateData = {};
@@ -276,8 +297,10 @@ export const updateAcara = async (req, res) => {
       updateData.idPDU = idPDU || null;
     }
 
-    // ✅ HANDLE KENDALA LOGIC
+    // ✅ PERBAIKAN: HANDLE KENDALA LOGIC YANG BENAR
     if (kendala !== undefined) {
+      updateData.kendala = kendalaStatus;
+
       if (hasKendala) {
         // Jika kendala = true, buktiDukung dan keteranganKendala wajib
         if (!req.files?.buktiDukung && !existingAcara.buktiDukung) {
@@ -292,11 +315,9 @@ export const updateAcara = async (req, res) => {
           });
         }
 
-        updateData.kendala = 'Ada Kendala';
         updateData.keteranganKendala = keteranganKendala.trim();
       } else {
-        // Jika kendala = false, buktiDukung dan keteranganKendala = null
-        updateData.kendala = 'Tidak Ada Kendala';
+        // Jika kendala = false, keteranganKendala = null
         updateData.keteranganKendala = null;
         // Note: buktiDukung file tidak dihapus, hanya di-set null di database
       }
@@ -328,6 +349,8 @@ export const updateAcara = async (req, res) => {
       });
     }
 
+    console.log('📤 Final update data:', updateData);
+
     // ✅ UPDATE ACARA
     const [affectedRows] = await Acara.update(updateData, {
       where: {
@@ -345,7 +368,12 @@ export const updateAcara = async (req, res) => {
     // ✅ GET DATA TERUPDATE
     const updatedAcara = await Acara.findByPk(id);
 
-    console.log('✅ Acara updated successfully');
+    console.log('✅ Acara updated successfully:', {
+      id: updatedAcara.id,
+      namaAcara: updatedAcara.namaAcara,
+      kendala: updatedAcara.kendala,
+      keteranganKendala: updatedAcara.keteranganKendala,
+    });
 
     res.json({
       message: 'Acara updated successfully',
@@ -436,6 +464,57 @@ export const deleteAcara = async (req, res) => {
     });
   } catch (error) {
     console.error('💥 Error in deleteAcara:', error);
+    res.status(500).json({ message: 'Server error: ' + error.message });
+  }
+};
+
+//get acara by id
+export const getAcaraById = async (req, res) => {
+  try {
+    console.log('🟢 getAcaraById controller called');
+    console.log('👤 req.user:', req.user);
+
+    if (!req.user) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const { id } = req.params; // ID Acara yang akan diambil
+    const user = req.user;
+
+    console.log('🔍 Getting Acara ID:', id);
+    console.log('👤 User:', user.name, 'Role:', user.role);
+
+    // ✅ CEK APAKAH ACARA ADA
+    const acara = await Acara.findOne({
+      where: {
+        id: id,
+      },
+    });
+
+    if (!acara) {
+      return res.status(404).json({
+        message: 'Acara not found',
+      });
+    }
+
+    console.log('✅ Acara found:', acara.namaAcara);
+
+    // ✅ CEK HAK AKSES
+    // Admin bisa akses semua acara, user hanya bisa akses acara miliknya sendiri
+    if (user.role !== 'admin' && acara.userId !== user.userId) {
+      return res.status(403).json({
+        message: 'Access denied. You can only access your own acara data.',
+      });
+    }
+
+    console.log('✅ Access granted to acara');
+
+    res.json({
+      message: 'Acara data retrieved successfully',
+      data: acara,
+    });
+  } catch (error) {
+    console.error('💥 Error in getAcaraById:', error);
     res.status(500).json({ message: 'Server error: ' + error.message });
   }
 };

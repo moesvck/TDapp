@@ -473,3 +473,44 @@ export const deletePDU = async (req, res) => {
     res.status(500).json({ message: 'Server error: ' + error.message });
   }
 };
+
+export const getAllPDUStaff = async (req, res) => {
+  try {
+    console.log('🟢 getAllPDUStaff controller called');
+    console.log('👤 req.user:', req.user);
+
+    if (!req.user) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // ✅ CEK ROLE STAFF ATAU ADMIN
+    if (req.user.role !== 'staff' && req.user.role !== 'admin') {
+      return res.status(403).json({
+        message: 'Access denied. Staff or Admin role required.',
+      });
+    }
+
+    console.log('✅ User is staff/admin, proceeding...');
+
+    // ✅ GET SEMUA DATA PDU (sama seperti admin untuk sementara)
+    const pduData = await PDU.findAll({
+      order: [['createdAt', 'DESC']],
+    });
+
+    console.log('📦 PDU data for staff found:', pduData.length, 'records');
+
+    // Log sample data untuk debugging
+    // if (pduData.length > 0) {
+    //   console.log('Sample PDU data:', JSON.stringify(pduData[0], null, 2));
+    // }
+
+    res.json({
+      message: 'PDU data retrieved successfully for staff',
+      data: pduData,
+      count: pduData.length,
+    });
+  } catch (error) {
+    console.error('💥 Error in getAllPDUStaff:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

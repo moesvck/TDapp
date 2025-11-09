@@ -1,5 +1,11 @@
 import express from 'express';
-import { getUsers, register, login, logout } from '../controllers/User.js';
+import {
+  getUsers,
+  getUserById,
+  register,
+  login,
+  logout,
+} from '../controllers/User.js';
 import { verifyToken } from '../midleware/VerifyToken.js'; // untuk verifikasi aksek harus login agara dapat token
 import { refreshToken } from '../controllers/RefreshToken.js';
 import {
@@ -8,6 +14,7 @@ import {
   getAllPDU,
   updatePDU,
   deletePDU,
+  getAllPDUStaff,
 } from '../controllers/PDU.js';
 import {
   createAcara,
@@ -15,11 +22,13 @@ import {
   getAcara,
   updateAcara,
   deleteAcara,
+  getAcaraById,
 } from '../controllers/Acara.js';
 
 const router = express.Router();
 
 router.get('/users', verifyToken, getUsers);
+router.get('/users/:id', verifyToken, getUserById);
 router.post('/register', register);
 router.post('/login', login);
 router.get('/token', refreshToken);
@@ -28,6 +37,7 @@ router.delete('/logout', logout);
 router.get('/pdu', verifyToken, getPDU);
 router.post('/pdu', verifyToken, createPDU);
 router.get('/pduadmin', verifyToken, getAllPDU);
+router.get('/pdustaff', verifyToken, getAllPDUStaff);
 router.put('/pdu/:id', verifyToken, updatePDU);
 router.delete('/pdu/:id', verifyToken, deletePDU);
 
@@ -36,5 +46,6 @@ router.get('/admin/acara', verifyToken, getAllAcara);
 router.get('/acara', verifyToken, getAcara);
 router.put('/acara/:id', verifyToken, updateAcara);
 router.delete('/acara/:id', verifyToken, deleteAcara);
+router.get('/acara/:id', verifyToken, getAcaraById);
 
 export default router;
