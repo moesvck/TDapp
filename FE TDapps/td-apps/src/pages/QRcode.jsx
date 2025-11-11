@@ -307,7 +307,8 @@ function QRcode() {
     );
   }
 
-  const buttons = [
+  // Semua button disimpan di array, termasuk Rate Card Kerjasama
+  const allButtons = [
     {
       href: 'https://docs.google.com/forms/d/e/1FAIpQLSed5cu0WfLX7yC2sX2BOu0RmCZyaN8oxZ7iCmCTS6YwRcCEuA/viewform?usp=header ',
       title: 'Wadah Aspirasi',
@@ -324,6 +325,11 @@ function QRcode() {
       external: true,
     },
   ];
+
+  // Filter untuk hanya menampilkan button yang diinginkan (tidak termasuk Rate Card Kerjasama)
+  const displayedButtons = allButtons.filter(
+    (button) => button.title !== 'Rate Card Kerjasama'
+  );
 
   const socialLinks = [
     {
@@ -393,7 +399,7 @@ function QRcode() {
               </p>
             </div>
 
-            {/* Buttons */}
+            {/* Buttons - Hanya menampilkan yang ada di displayedButtons (tidak termasuk Rate Card Kerjasama) */}
             <div
               style={{
                 width: '100%',
@@ -402,7 +408,7 @@ function QRcode() {
                 gap: '15px',
               }}
             >
-              {buttons.map(({ href, title, external }) => (
+              {displayedButtons.map(({ href, title, external }) => (
                 <a
                   key={title}
                   href={href}
