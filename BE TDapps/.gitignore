@@ -106,3 +106,12 @@ build/Release
 
 # Users Environment Variables
 .lock-wscript
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+npm-debug.log*
