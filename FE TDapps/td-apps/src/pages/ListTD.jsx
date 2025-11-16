@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import '../assets/css/listtd.css';
 import { NavLink, useNavigate } from 'react-router-dom';
 import Pen from '../assets/pen-solid-full.svg';
 import Trash from '../assets/trash-solid-full.svg';
-import Refresh from '../assets/refresh.svg';
 import Logout from '../assets/logout.svg';
+import Tambah from '../assets/tambah.svg';
+import MenuIcon from '../assets/menu.svg';
+import CloseIcon from '../assets/x.svg';
 import { pduService, getToken, setToken } from '../services/pduService';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
+import io from 'socket.io-client';
 
 const ListTD = () => {
   const [acaraData, setAcaraData] = useState([]);
@@ -16,6 +19,8 @@ const ListTD = () => {
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState('');
   const [authChecked, setAuthChecked] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [burgerMenuOpen, setBurgerMenuOpen] = useState(false); // State untuk menu burger
 
   // State untuk modal edit
   const [showEditModal, setShowEditModal] = useState(false);
@@ -37,11 +42,187 @@ const ListTD = () => {
   const { isAuthenticated, user, logout, login } = useAuth();
   const navigate = useNavigate();
   const token = getToken();
+  const socketRef = useRef(null);
+  const burgerMenuRef = useRef(null);
 
-  // Fungsi untuk refresh token
+  // ✅ HANDLE CLICK OUTSIDE BURGER MENU
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        burgerMenuRef.current &&
+        !burgerMenuRef.current.contains(event.target)
+      ) {
+        setBurgerMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // ✅ TOGGLE BURGER MENU
+  const toggleBurgerMenu = () => {
+    setBurgerMenuOpen(!burgerMenuOpen);
+  };
+
+  // ✅ CLOSE BURGER MENU
+  const closeBurgerMenu = () => {
+    setBurgerMenuOpen(false);
+  };
+
+  // ✅ SOCKET.IO IMPLEMENTATION
+  const initializeSocket = () => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
+
+    try {
+      const socket = io('http://localhost:3000', {
+        auth: {
+          token: token,
+        },
+        transports: ['websocket', 'polling'],
+        timeout: 10000,
+      });
+
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        setIsConnected(true);
+      });
+
+      socket.on('disconnect', (reason) => {
+        setIsConnected(false);
+        setTimeout(() => {
+          if (isAuthenticated && token) {
+            initializeSocket();
+          }
+        }, 5000);
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('❌ Socket.IO Connection Error:', error);
+        setIsConnected(false);
+      });
+
+      // ✅ REAL-TIME EVENTS
+      socket.on('acaraUpdated', (updatedAcara) => {
+        setAcaraData((prev) =>
+          prev.map((acara) =>
+            acara.id === updatedAcara.id
+              ? {
+                  ...updatedAcara,
+                  kendala:
+                    updatedAcara.kendala === 'Ada Kendala' ||
+                    updatedAcara.kendala === true ||
+                    updatedAcara.kendala === 'true',
+                }
+              : acara
+          )
+        );
+        setLastUpdated(new Date().toLocaleTimeString('id-ID'));
+
+        if (updatedAcara.namaAcara) {
+          showNotification(`Acara "${updatedAcara.namaAcara}" diperbarui`);
+        }
+      });
+
+      socket.on('acaraCreated', (newAcara) => {
+        setAcaraData((prev) => {
+          const exists = prev.find((acara) => acara.id === newAcara.id);
+          if (!exists) {
+            const normalizedAcara = {
+              ...newAcara,
+              kendala:
+                newAcara.kendala === 'Ada Kendala' ||
+                newAcara.kendala === true ||
+                newAcara.kendala === 'true',
+            };
+            return [normalizedAcara, ...prev];
+          }
+          return prev;
+        });
+        setLastUpdated(new Date().toLocaleTimeString('id-ID'));
+
+        if (newAcara.namaAcara) {
+          showNotification(`Acara baru "${newAcara.namaAcara}" ditambahkan`);
+        }
+      });
+
+      socket.on('acaraDeleted', (deletedAcaraData) => {
+        const acaraId = deletedAcaraData.id || deletedAcaraData;
+        const acaraName = deletedAcaraData.namaAcara || 'Acara';
+
+        setAcaraData((prev) => prev.filter((acara) => acara.id !== acaraId));
+        setLastUpdated(new Date().toLocaleTimeString('id-ID'));
+
+        showNotification(`Acara "${acaraName}" dihapus`);
+      });
+
+      socket.on('dataRefreshed', () => {
+        showNotification('Data diperbarui dari server');
+        fetchAllData();
+      });
+
+      socket.on('error', (error) => {
+        console.error('📡 Socket error:', error);
+        showNotification('Error koneksi real-time', 'error');
+      });
+
+      return socket;
+    } catch (error) {
+      console.error('Failed to initialize socket:', error);
+      return null;
+    }
+  };
+
+  // ✅ NOTIFICATION FUNCTION
+  const showNotification = (message, type = 'info') => {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${
+      type === 'error' ? 'danger' : 'success'
+    } alert-dismissible fade show`;
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      min-width: 300px;
+      animation: slideInRight 0.3s ease-out;
+    `;
+
+    notification.innerHTML = `
+      <strong>${type === 'error' ? '⚠️' : '🔔'} </strong> ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.remove();
+      }
+    }, 5000);
+  };
+
+  // ✅ SOCKET.IO CLEANUP AND INITIALIZATION
+  useEffect(() => {
+    if (isAuthenticated && token && authChecked) {
+      const socket = initializeSocket();
+
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+      };
+    }
+  }, [isAuthenticated, token, authChecked]);
+
+  // ✅ FUNGSI REFRESH TOKEN
   const refreshToken = async () => {
     try {
-      console.log('Attempting to refresh token...');
       const response = await axios.get('http://localhost:3000/token', {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -49,9 +230,6 @@ const ListTD = () => {
       });
 
       const newToken = response.data.token;
-      console.log('Token refreshed successfully');
-
-      // Simpan token baru
       setToken(newToken);
       login(newToken);
 
@@ -62,23 +240,17 @@ const ListTD = () => {
     }
   };
 
-  // Fungsi untuk membuat request dengan auto refresh token
+  // ✅ FUNGSI UNTUK MEMBUAT REQUEST DENGAN AUTO REFRESH TOKEN
   const makeAuthenticatedRequest = async (requestFn) => {
     try {
-      // Coba request pertama
       return await requestFn();
     } catch (error) {
-      // Jika error 401 (Unauthorized), coba refresh token
       if (error.response?.status === 401) {
-        console.log('Token expired, attempting refresh...');
         try {
           const newToken = await refreshToken();
-
-          // Coba request lagi dengan token baru
           const retryRequest = async () => {
             return await requestFn();
           };
-
           return await retryRequest();
         } catch (refreshError) {
           console.error('Token refresh failed, logging out:', refreshError);
@@ -99,42 +271,34 @@ const ListTD = () => {
     }
   };
 
-  // Check authentication on component mount
+  // ✅ CHECK AUTHENTICATION ON COMPONENT MOUNT
   useEffect(() => {
     checkAuthentication();
   }, []);
 
   const checkAuthentication = async () => {
-    // Cek 1: Apakah ada token di localStorage?
     if (!token) {
-      console.log('No token found, redirecting to login');
       navigate('/login');
       return;
     }
 
-    // Cek 2: Apakah user authenticated di context?
     if (!isAuthenticated) {
-      console.log('User not authenticated in context, redirecting to login');
       navigate('/login');
       return;
     }
 
     try {
-      // Cek 3: Coba fetch data untuk verifikasi token dengan auto refresh
       await makeAuthenticatedRequest(async () => {
         await fetchAllData();
       });
-
       setAuthChecked(true);
     } catch (error) {
       console.error('Authentication check failed:', error);
-
       if (error.response?.status === 401) {
         setError('Session telah berakhir. Silakan login kembali.');
       } else {
         setError('Terjadi kesalahan. Silakan login kembali.');
       }
-
       setTimeout(() => {
         logout();
         navigate('/login');
@@ -145,7 +309,6 @@ const ListTD = () => {
   // ✅ HANDLE TOKEN EXPIRED EVENT
   useEffect(() => {
     const handleTokenExpired = () => {
-      console.log('Token expired event received');
       setError('Session expired. Redirecting to login...');
       setTimeout(() => {
         logout();
@@ -157,7 +320,6 @@ const ListTD = () => {
     };
 
     window.addEventListener('tokenExpired', handleTokenExpired);
-
     return () => {
       window.removeEventListener('tokenExpired', handleTokenExpired);
     };
@@ -180,25 +342,23 @@ const ListTD = () => {
     });
   };
 
-  // ✅ FUNGSI UNTUK DAPATKAN CLASS STATUS - DIPERBAIKI
+  // ✅ FUNGSI UNTUK DAPATKAN CLASS STATUS
   const getStatusClass = (kendala) => {
-    // Handle semua kemungkinan format kendala
     if (kendala === 'Ada Kendala' || kendala === true || kendala === 'true') {
       return 'alert-danger';
     }
-    return ''; // Tidak ada class tambahan
+    return '';
   };
 
-  // ✅ FUNGSI UNTUK DAPATKAN TEKS STATUS - DIPERBAIKI
+  // ✅ FUNGSI UNTUK DAPATKAN TEKS STATUS
   const getStatusText = (kendala) => {
-    // Handle semua kemungkinan format kendala
     if (kendala === 'Ada Kendala' || kendala === true || kendala === 'true') {
       return 'Terdapat Kendala';
     }
     return 'Clear';
   };
 
-  // ✅ FUNGSI UNTUK BADGE STATUS - DIPERBAIKI
+  // ✅ FUNGSI UNTUK BADGE STATUS
   const getStatusBadge = (kendala) => {
     if (kendala === 'Ada Kendala' || kendala === true || kendala === 'true') {
       return 'bg-danger';
@@ -209,7 +369,6 @@ const ListTD = () => {
   // ✅ FUNCTION UNTUK DAPATKAN NAMA PDU BERDASARKAN idPDU
   const getPDUName = (idPDU) => {
     if (!idPDU) return 'N/A';
-
     const pdu = pduData.find((p) => p.id === idPDU);
     return pdu ? pdu.namePDU : `PDU-${idPDU}`;
   };
@@ -218,12 +377,8 @@ const ListTD = () => {
   const canEditDelete = (tanggalAcara) => {
     const acaraDate = new Date(tanggalAcara);
     const today = new Date();
-
-    // Set waktu ke 00:00:00 untuk kedua tanggal untuk komparasi yang akurat
     acaraDate.setHours(0, 0, 0, 0);
     today.setHours(0, 0, 0, 0);
-
-    // Bisa edit/hapus hanya jika tanggal acara sama dengan hari ini
     return acaraDate.getTime() === today.getTime();
   };
 
@@ -234,19 +389,13 @@ const ListTD = () => {
       setError('');
 
       await makeAuthenticatedRequest(async () => {
-        // ✅ FETCH KEDUA DATA SECARA PARALEL
         const [acaraResponse, pduResponse] = await Promise.all([
           pduService.getAcara(),
           pduService.getPDU(),
         ]);
 
-        console.log('📦 Acara data:', acaraResponse.data);
-        console.log('📦 PDU data:', pduResponse.data);
-
-        // Normalisasi data kendala untuk konsistensi
         const normalizedAcaraData = (acaraResponse.data || []).map((acara) => ({
           ...acara,
-          // Pastikan kendala dalam format yang konsisten
           kendala:
             acara.kendala === 'Ada Kendala' ||
             acara.kendala === true ||
@@ -258,9 +407,6 @@ const ListTD = () => {
         setLastUpdated(new Date().toLocaleTimeString('id-ID'));
       });
     } catch (err) {
-      console.error('Error fetching data:', err);
-
-      // Error sudah ditangani di makeAuthenticatedRequest, tidak perlu handle lagi
       if (!err.response?.status === 401) {
         setError(err.message || 'Gagal memuat data');
       }
@@ -269,7 +415,7 @@ const ListTD = () => {
     }
   };
 
-  // ✅ FUNGSI UNTUK MENDAPATKAN DATA ACARA BY ID - DIPERBAIKI
+  // ✅ FUNGSI UNTUK MENDAPATKAN DATA ACARA BY ID
   const fetchAcaraById = async (id) => {
     try {
       setEditLoading(true);
@@ -282,9 +428,6 @@ const ListTD = () => {
       });
 
       const acaraData = response.data.data;
-      console.log('📥 Data acara dari backend untuk edit:', acaraData);
-
-      // ✅ PERBAIKAN: Mapping kendala yang benar dari backend
       const kendalaValue =
         acaraData.kendala === 'Ada Kendala' ||
         acaraData.kendala === true ||
@@ -294,7 +437,7 @@ const ListTD = () => {
         namaAcara: acaraData.namaAcara || '',
         tipeAcara: acaraData.tipeAcara || '',
         kendala: kendalaValue,
-        buktiDukung: null, // Reset file input
+        buktiDukung: null,
         keteranganKendala: acaraData.keteranganKendala || '',
         idPDU: acaraData.idPDU || '',
       });
@@ -311,36 +454,22 @@ const ListTD = () => {
 
   // ✅ FUNGSI UNTUK HANDLE EDIT ACARA
   const handleEditAcara = async (id) => {
-    console.log('Edit acara dengan ID:', id);
     await fetchAcaraById(id);
   };
 
-  // ✅ FUNGSI UNTUK HANDLE SUBMIT EDIT - DIPERBAIKI SECARA MENYELURUH
+  // ✅ FUNGSI UNTUK HANDLE SUBMIT EDIT DENGAN SOCKET EMIT
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-
     if (!editingAcara) return;
 
     try {
       setEditLoading(true);
-
       const formData = new FormData();
-
-      // ✅ TAMBAHKAN SEMUA FIELD YANG DIPERLUKAN
       formData.append('namaAcara', editFormData.namaAcara);
       formData.append('tipeAcara', editFormData.tipeAcara);
-
-      // ✅ PERBAIKAN PENTING: Kirim kendala sebagai boolean string
       formData.append('kendala', editFormData.kendala.toString());
 
-      console.log('🔍 Data yang akan dikirim:');
-      console.log('- namaAcara:', editFormData.namaAcara);
-      console.log('- tipeAcara:', editFormData.tipeAcara);
-      console.log('- kendala:', editFormData.kendala);
-
-      // ✅ PERBAIKAN: Handle kendala dan keterangan dengan benar
       if (editFormData.kendala) {
-        // Jika ada kendala, kirim keterangan (WAJIB diisi)
         if (
           !editFormData.keteranganKendala ||
           editFormData.keteranganKendala.trim() === ''
@@ -349,52 +478,22 @@ const ListTD = () => {
           setEditLoading(false);
           return;
         }
-
         formData.append('keteranganKendala', editFormData.keteranganKendala);
-        console.log('- keteranganKendala:', editFormData.keteranganKendala);
-
-        // ✅ PERBAIKAN: Handle file upload - jika ada file baru atau file lama sudah ada
         if (editFormData.buktiDukung) {
           formData.append('buktiDukung', editFormData.buktiDukung);
-          console.log(
-            '- buktiDukung (file baru):',
-            editFormData.buktiDukung.name
-          );
-        } else if (editingAcara.buktiDukung) {
-          console.log('- buktiDukung: menggunakan file lama');
-          // Backend akan handle file lama
-        } else {
+        } else if (!editingAcara.buktiDukung) {
           alert('Bukti dukung wajib diupload ketika ada kendala');
           setEditLoading(false);
           return;
         }
       } else {
-        // Jika tidak ada kendala, kirim string kosong untuk keterangan
         formData.append('keteranganKendala', '');
-        console.log('- keteranganKendala: (dikosongkan)');
       }
 
-      // ✅ Tambahkan idPDU jika ada
       if (editFormData.idPDU) {
         formData.append('idPDU', editFormData.idPDU);
-        console.log('- idPDU:', editFormData.idPDU);
       }
 
-      // ✅ DEBUG: Tampilkan semua data di FormData
-      console.log('📤 SEMUA DATA YANG DIKIRIM KE BACKEND:');
-      for (let [key, value] of formData.entries()) {
-        if (key === 'buktiDukung') {
-          console.log(
-            `- ${key}:`,
-            value.name,
-            `(File: ${value.type}, Size: ${value.size} bytes)`
-          );
-        } else {
-          console.log(`- ${key}:`, value);
-        }
-      }
-
-      // ✅ KIRIM KE BACKEND
       const response = await makeAuthenticatedRequest(async () => {
         return await axios.put(
           `http://localhost:3000/acara/${editingAcara.id}`,
@@ -409,14 +508,13 @@ const ListTD = () => {
         );
       });
 
-      console.log('✅ Response sukses dari backend:', response.data);
-
       if (response.data.message === 'Acara updated successfully') {
+        if (socketRef.current && isConnected) {
+          socketRef.current.emit('acaraUpdated', response.data.data);
+        }
         alert('Data acara berhasil diupdate!');
         setShowEditModal(false);
         setEditingAcara(null);
-
-        // Refresh data
         setTimeout(() => {
           fetchAllData();
         }, 500);
@@ -425,27 +523,18 @@ const ListTD = () => {
       }
     } catch (error) {
       console.error('❌ Error updating acara:', error);
-
-      // ✅ TAMPILKAN ERROR DETAIL DARI BACKEND
       if (error.response) {
-        console.error('❌ Response error data:', error.response.data);
-        console.error('❌ Response error status:', error.response.status);
-
         const errorMessage =
           error.response.data?.message || error.response.statusText;
         alert('Gagal mengupdate data acara: ' + errorMessage);
-
-        // ✅ TAMPILKAN PESAN ERROR SPESIFIK
         if (errorMessage.includes('Bukti dukung required')) {
           alert('ERROR: Bukti dukung wajib diupload ketika ada kendala');
         } else if (errorMessage.includes('Keterangan kendala required')) {
           alert('ERROR: Keterangan kendala wajib diisi ketika ada kendala');
         }
       } else if (error.request) {
-        console.error('❌ Request error:', error.request);
         alert('Tidak ada response dari server. Periksa koneksi jaringan.');
       } else {
-        console.error('❌ Error message:', error.message);
         alert('Gagal mengupdate data acara: ' + error.message);
       }
     } finally {
@@ -453,20 +542,11 @@ const ListTD = () => {
     }
   };
 
-  // ✅ FUNGSI UNTUK HANDLE INPUT CHANGE PADA FORM EDIT - DIPERBAIKI
+  // ✅ FUNGSI UNTUK HANDLE INPUT CHANGE PADA FORM EDIT
   const handleEditInputChange = (e) => {
     const { name, value, type, files, checked } = e.target;
-
-    console.log(`🔄 Input changed: ${name}`, {
-      value,
-      type,
-      files: files ? files[0]?.name : 'none',
-      checked,
-    });
-
     setEditFormData((prev) => {
       let newValue;
-
       if (type === 'checkbox') {
         newValue = checked;
       } else if (type === 'file') {
@@ -480,17 +560,10 @@ const ListTD = () => {
         [name]: newValue,
       };
 
-      // ✅ PERBAIKAN: Reset buktiDukung dan keteranganKendala ketika kendala diubah dari true ke false
       if (name === 'kendala' && !checked) {
-        console.log(
-          '🔄 Kendala diubah menjadi false, reset file dan keterangan'
-        );
         newFormData.buktiDukung = null;
         newFormData.keteranganKendala = '';
       }
-
-      // Log perubahan form data
-      console.log('📝 FormData updated:', newFormData);
       return newFormData;
     });
   };
@@ -511,19 +584,16 @@ const ListTD = () => {
 
   // ✅ FUNGSI UNTUK HANDLE DELETE ACARA
   const handleDeleteAcara = async (id, namaAcara) => {
-    // Set data acara yang akan dihapus untuk konfirmasi
     setAcaraToDelete({ id, namaAcara });
   };
 
-  // ✅ FUNGSI UNTUK KONFIRMASI DELETE
+  // ✅ FUNGSI UNTUK KONFIRMASI DELETE DENGAN SOCKET EMIT
   const confirmDelete = async () => {
     if (!acaraToDelete) return;
 
     try {
       setDeleteLoading(true);
-
       await makeAuthenticatedRequest(async () => {
-        // Gunakan axios langsung untuk delete
         await axios.delete(`http://localhost:3000/acara/${acaraToDelete.id}`, {
           headers: {
             Authorization: `Bearer ${getToken()}`,
@@ -531,16 +601,18 @@ const ListTD = () => {
         });
       });
 
+      if (socketRef.current && isConnected) {
+        socketRef.current.emit('acaraDeleted', {
+          id: acaraToDelete.id,
+          namaAcara: acaraToDelete.namaAcara,
+        });
+      }
+
       alert(`Acara "${acaraToDelete.namaAcara}" berhasil dihapus!`);
-
-      // Reset state
       setAcaraToDelete(null);
-
-      // Refresh data setelah delete
       fetchAllData();
     } catch (error) {
       console.error('Error deleting acara:', error);
-
       if (error.response?.status === 401) {
         alert('Session expired. Silakan login kembali.');
       } else {
@@ -559,13 +631,13 @@ const ListTD = () => {
     setAcaraToDelete(null);
   };
 
-  const handleRefresh = () => {
-    fetchAllData();
-  };
-
   const handleLogout = () => {
     if (window.confirm('Apakah Anda yakin ingin logout?')) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
       logout();
+      closeBurgerMenu();
     }
   };
 
@@ -588,7 +660,6 @@ const ListTD = () => {
     );
   }
 
-  // ✅ TOKEN EXPIRED STATE
   if (error && error.includes('Session expired')) {
     return (
       <div className="container-fluid">
@@ -623,53 +694,136 @@ const ListTD = () => {
   }
 
   return (
-    <div>
+    <div className="listtd-container">
       <div className="container-fluid">
-        {/* Header dengan User Info */}
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <h1 className="title mb-0">Notebook of Technical Director.</h1>
-            {user && (
-              <small className="text-muted">
-                Welcome, <strong>{user.name}</strong> ({user.role})
-              </small>
-            )}
+        {/* Header dengan User Info & Socket Status */}
+        <div className="row align-items-center mb-4 mobile-header blocktitle">
+          <div className="col-12 col-md-8">
+            <div className="d-flex flex-column align-items-center align-items-md-start">
+              <h1 className="title mb-2 mb-md-1">
+                Notebook of Technical Director.
+              </h1>
+              {user && (
+                <div className="d-flex flex-column flex-md-row align-items-center gap-2 gap-md-3">
+                  <small className="text-muted text-center text-md-start">
+                    Welcome, <strong>{user.name}</strong>
+                  </small>
+                  <div className="vr d-none d-md-block mx-3"></div>
+                  <small
+                    className={`badge ${
+                      isConnected ? 'bg-success' : 'bg-warning'
+                    } mobile-socket-badge`}
+                  ></small>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="d-flex gap-2">
-            <button
-              className="btn btn-outline-secondary"
-              onClick={handleRefresh}
-              disabled={loading}
-            >
-              <img src={Refresh} alt="Refresh" className="icon me-2" />
-              {loading ? 'Loading...' : 'Refresh'}
-            </button>
-            <button className="btn btn-outline-danger" onClick={handleLogout}>
-              <img src={Logout} alt="Logout" className="icon me-2" />
-              Logout
-            </button>
+
+          {/* Desktop/Tablet View - Tombol Logout dan Create tetap visible */}
+          <div className="col-12 col-md-4 mt-3 mt-md-0 d-none d-lg-block">
+            <div className="d-flex justify-content-center justify-content-md-end">
+              <NavLink to={'/createedit'} className="btn btn-success">
+                <img src={Tambah} alt="tambah" className="icon me-2" />
+                Create New Acara
+              </NavLink>
+              <button
+                className="btn btn-danger mobile-logout-btn me-2 "
+                onClick={handleLogout}
+              >
+                <img src={Logout} alt="Logout" className="icon me-2" />
+                Logout
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile View - Menu Burger */}
+          <div className="col-12 d-block d-lg-none">
+            <div className="d-flex justify-content-between align-items-center">
+              {/* Info Socket Status untuk Mobile */}
+              <div className="d-flex align-items-center">
+                <small
+                  className={`badge ${
+                    isConnected ? 'bg-success' : 'bg-warning'
+                  } mobile-socket-badge me-2`}
+                >
+                  {isConnected ? '🟢 Connected' : '🟡 Connecting'}
+                </small>
+              </div>
+
+              {/* Burger Menu Button */}
+              <div className="burger-menu-container" ref={burgerMenuRef}>
+                <button
+                  className="btn burger-menu-btn"
+                  onClick={toggleBurgerMenu}
+                  aria-label="Menu"
+                >
+                  <img src={MenuIcon} alt="Menu" className="burger-icon" />
+                </button>
+
+                {/* Burger Menu Dropdown */}
+                {burgerMenuOpen && (
+                  <div className="burger-menu-dropdown">
+                    <NavLink
+                      to={'/createedit'}
+                      className="burger-menu-item"
+                      onClick={closeBurgerMenu}
+                    >
+                      <img
+                        src={Tambah}
+                        alt="tambah"
+                        className="burger-menu-icon"
+                      />
+                      Create New Acara
+                    </NavLink>
+                    <button
+                      className="burger-menu-item burger-menu-logout"
+                      onClick={handleLogout}
+                    >
+                      <img
+                        src={Logout}
+                        alt="Logout"
+                        className="burger-menu-icon"
+                      />
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Info Section */}
-        <div className="row mb-3">
-          <div className="col-md-8">
+        {/* Info Section - Hanya untuk Desktop/Tablet */}
+        <div className="row mb-4 align-items-center d-none d-lg-flex">
+          {/* Info - kiri */}
+          <div className="col-md-8 col-12 mb-2 mb-md-0">
             {acaraData.length > 0 && (
-              <div className="alert alert-info">
-                <strong>Info: </strong>
-                Menampilkan {acaraData.length} data Acara
-                {lastUpdated && (
-                  <small className="ms-2">
-                    (Terakhir update: {lastUpdated})
-                  </small>
-                )}
+              <div className="alert alert-info mb-0 py-2 d-inline-block">
+                <div className="d-flex flex-column flex-md-row align-items-center gap-2">
+                  <strong className="me-0 me-md-2">Info : &ensp; </strong>
+                  <span>Menampilkan {acaraData.length} data Acara &ensp;</span>
+                </div>
               </div>
             )}
           </div>
-          <div className="col-md-4 text-end">
-            <NavLink to={'/createedit'} className="btn btn-success">
-              + Create New Acara
-            </NavLink>
+
+          {/* Tombol - kanan (Desktop/Tablet) */}
+          <div className="col-md-4 col-12 text-md-end text-right">
+            {/* Tombol Create sudah ada di header untuk desktop/tablet */}
+          </div>
+        </div>
+
+        {/* Info Section untuk Mobile */}
+        <div className="row mb-4 d-block d-lg-none">
+          <div className="col-12">
+            {acaraData.length > 0 && (
+              <div className="alert alert-info mb-0 py-2 text-center">
+                <div className="d-flex flex-column align-items-center gap-2">
+                  <strong>Info:</strong>
+                  <span>Menampilkan {acaraData.length} data Acara</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -685,12 +839,6 @@ const ListTD = () => {
         {error && !error.includes('Session expired') && (
           <div className="alert alert-danger">
             <strong>Error: </strong> {error}
-            <button
-              className="btn btn-sm btn-outline-danger ms-3"
-              onClick={fetchAllData}
-            >
-              Coba Lagi
-            </button>
           </div>
         )}
 
@@ -705,105 +853,238 @@ const ListTD = () => {
         )}
 
         {!loading && !error && acaraData.length > 0 && (
-          <div className="table-responsive">
-            <table className="table table-striped table-hover">
-              <thead className="table-dark">
-                <tr>
-                  <th scope="col">Tanggal Acara</th>
-                  <th scope="col">Nama TD</th>
-                  <th scope="col">Nama PDU</th>
-                  <th scope="col">Acara</th>
-                  <th scope="col">Tipe Acara</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Keterangan</th>
-                  <th scope="col">Action</th>
-                </tr>
-              </thead>
-              <tbody>
+          <>
+            {/* Desktop/Tablet View */}
+            <div className="d-none d-lg-block">
+              <div className="table-responsive">
+                <table className="table table-hover">
+                  <thead className="table-dark">
+                    <tr>
+                      <th scope="col">Tanggal Acara</th>
+                      <th scope="col">Nama TD</th>
+                      <th scope="col">Nama PDU</th>
+                      <th scope="col">Acara</th>
+                      <th scope="col">Tipe Acara</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Keterangan</th>
+                      <th scope="col">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {acaraData.map((acara) => {
+                      const canAction = canEditDelete(acara.tanggalAcara);
+                      return (
+                        <tr
+                          key={acara.id}
+                          className={getStatusClass(acara.kendala)}
+                        >
+                          <td>
+                            <strong>{formatDate(acara.tanggalAcara)}</strong>
+                            <br />
+                            <small className="text-muted">
+                              {formatTime(acara.createdAt)}
+                            </small>
+                          </td>
+                          <td>{user.name}</td>
+                          <td>{getPDUName(acara.idPDU)}</td>
+                          <td>
+                            <strong>{acara.namaAcara || 'N/A'}</strong>
+                          </td>
+                          <td>
+                            <span className="badge bg-info text-dark">
+                              {acara.tipeAcara || 'N/A'}
+                            </span>
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${getStatusBadge(
+                                acara.kendala
+                              )}`}
+                            >
+                              {getStatusText(acara.kendala)}
+                            </span>
+                          </td>
+                          <td>
+                            {acara.keteranganKendala &&
+                            (acara.kendala === 'Ada Kendala' ||
+                              acara.kendala === true ||
+                              acara.kendala === 'true') ? (
+                              <small className="text-muted">
+                                {acara.keteranganKendala}
+                              </small>
+                            ) : (
+                              <small className="text-muted">-</small>
+                            )}
+                          </td>
+                          <td>
+                            {canAction ? (
+                              <div className="btn-group">
+                                <button
+                                  className="btn btn-sm btn-outline-primary"
+                                  onClick={() => handleEditAcara(acara.id)}
+                                  title="Edit"
+                                  disabled={editLoading || deleteLoading}
+                                >
+                                  <img src={Pen} alt="Edit" className="icon" />
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-outline-danger"
+                                  onClick={() =>
+                                    handleDeleteAcara(acara.id, acara.namaAcara)
+                                  }
+                                  title="Delete"
+                                  disabled={editLoading || deleteLoading}
+                                >
+                                  <img
+                                    src={Trash}
+                                    alt="Delete"
+                                    className="icon"
+                                  />
+                                </button>
+                              </div>
+                            ) : (
+                              <small className="text-muted">
+                                Tidak tersedia
+                              </small>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Mobile View - IMPROVED LAYOUT */}
+            <div className="d-block d-lg-none">
+              <div className="row g-3 mobile-acara-list">
                 {acaraData.map((acara) => {
                   const canAction = canEditDelete(acara.tanggalAcara);
-
-                  // Debug log untuk memeriksa data kendala
-                  console.log(
-                    `Acara: ${acara.namaAcara}, Kendala:`,
-                    acara.kendala,
-                    `Type:`,
-                    typeof acara.kendala
-                  );
-
                   return (
-                    <tr
-                      key={acara.id}
-                      className={getStatusClass(acara.kendala)}
-                    >
-                      <td>
-                        <strong>{formatDate(acara.tanggalAcara)}</strong>
-                        <br />
-                        <small className="text-muted">
-                          {formatTime(acara.createdAt)}
-                        </small>
-                      </td>
-                      <td>{user.name}</td>
-                      <td>{getPDUName(acara.idPDU)}</td>
-                      <td>
-                        <strong>{acara.namaAcara || 'N/A'}</strong>
-                      </td>
-                      <td>
-                        <span className="badge bg-info text-dark">
-                          {acara.tipeAcara || 'N/A'}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          className={`badge ${getStatusBadge(acara.kendala)}`}
-                        >
-                          {getStatusText(acara.kendala)}
-                        </span>
-                      </td>
-                      <td>
-                        {acara.keteranganKendala &&
-                        (acara.kendala === 'Ada Kendala' ||
-                          acara.kendala === true ||
-                          acara.kendala === 'true') ? (
-                          <small className="text-muted">
-                            {acara.keteranganKendala}
-                          </small>
-                        ) : (
-                          <small className="text-muted">-</small>
-                        )}
-                      </td>
-                      <td>
-                        {canAction ? (
-                          <div className="btn-group">
-                            <button
-                              className="btn btn-sm btn-outline-primary"
-                              onClick={() => handleEditAcara(acara.id)}
-                              title="Edit"
-                              disabled={editLoading || deleteLoading}
+                    <div key={acara.id} className="col-12">
+                      <div
+                        className={`card mobile-acara-card ${getStatusClass(
+                          acara.kendala
+                        )}`}
+                      >
+                        <div className="card-body">
+                          {/* Header dengan Nama Acara dan Status */}
+                          <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center mb-3 mobile-card-header">
+                            <h6 className="card-title mb-2 mb-sm-0 mobile-card-title">
+                              {acara.namaAcara || 'N/A'}
+                            </h6>
+                            <span
+                              className={`badge ${getStatusBadge(
+                                acara.kendala
+                              )} mobile-status-badge`}
                             >
-                              <img src={Pen} alt="Edit" className="icon" />
-                            </button>
-                            <button
-                              className="btn btn-sm btn-outline-danger"
-                              onClick={() =>
-                                handleDeleteAcara(acara.id, acara.namaAcara)
-                              }
-                              title="Delete"
-                              disabled={editLoading || deleteLoading}
-                            >
-                              <img src={Trash} alt="Delete" className="icon" />
-                            </button>
+                              {getStatusText(acara.kendala)}
+                            </span>
                           </div>
-                        ) : (
-                          <small className="text-muted">Tidak tersedia</small>
-                        )}
-                      </td>
-                    </tr>
+
+                          {/* Informasi Tanggal dan Waktu */}
+                          <div className="row small text-muted mb-3 mobile-date-time">
+                            <div className="col-6">
+                              <strong>Tanggal:</strong>
+                              <div className="mt-1">
+                                {formatDate(acara.tanggalAcara)}
+                              </div>
+                            </div>
+                            <div className="col-6">
+                              <strong>Waktu:</strong>
+                              <div className="mt-1">
+                                {formatTime(acara.createdAt)}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Informasi TD dan PDU */}
+                          <div className="row small mb-3 mobile-td-pdu">
+                            <div className="col-6">
+                              <strong>TD:</strong>
+                              <div className="mt-1">{user.name}</div>
+                            </div>
+                            <div className="col-6">
+                              <strong>PDU:</strong>
+                              <div className="mt-1">
+                                {getPDUName(acara.idPDU)}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Tipe Acara */}
+                          <div className="mb-3 mobile-tipe-acara">
+                            <span className="badge bg-info text-dark">
+                              {acara.tipeAcara || 'N/A'}
+                            </span>
+                          </div>
+
+                          {/* Keterangan Kendala */}
+                          {acara.keteranganKendala &&
+                            (acara.kendala === 'Ada Kendala' ||
+                              acara.kendala === true ||
+                              acara.kendala === 'true') && (
+                              <div className="mb-3 mobile-keterangan">
+                                <small>
+                                  <strong>Keterangan:</strong>
+                                </small>
+                                <div className="mt-1 small text-muted">
+                                  {acara.keteranganKendala}
+                                </div>
+                              </div>
+                            )}
+
+                          {/* Action Buttons */}
+                          {canAction && (
+                            <div className="d-flex justify-content-center gap-2 mt-4 mobile-action-buttons">
+                              <button
+                                className="btn btn-sm btn-outline-primary mobile-edit-btn"
+                                onClick={() => handleEditAcara(acara.id)}
+                                title="Edit"
+                                disabled={editLoading || deleteLoading}
+                              >
+                                <img
+                                  src={Pen}
+                                  alt="Edit"
+                                  className="icon me-1"
+                                />
+                                <span>&nbsp;Edit</span>
+                              </button>
+                              <button
+                                className="btn btn-sm btn-outline-danger mobile-delete-btn"
+                                onClick={() =>
+                                  handleDeleteAcara(acara.id, acara.namaAcara)
+                                }
+                                title="Delete"
+                                disabled={editLoading || deleteLoading}
+                              >
+                                <img
+                                  src={Trash}
+                                  alt="Delete"
+                                  className="icon me-1"
+                                />
+                                <span>&nbsp;Hapus</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Tidak dapat diedit/dihapus */}
+                          {!canAction && (
+                            <div className="text-center mt-3 mobile-no-action">
+                              <small className="text-muted">
+                                Tidak dapat diedit/dihapus
+                              </small>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
+          </>
         )}
 
         {/* Modal Edit Acara */}
@@ -812,18 +1093,20 @@ const ListTD = () => {
             className="modal fade show"
             style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }}
           >
-            <div className="modal-dialog modal-lg">
+            <div className="modal-dialog modal-lg mobile-modal">
               <div className="modal-content">
                 <div className="modal-header">
-                  <h5 className="modal-title">
+                  <h4 className="modal-title mobile-modal-title">
                     Edit Acara - {editingAcara?.namaAcara}
-                  </h5>
+                  </h4>
                   <button
                     type="button"
                     className="btn-close"
                     onClick={handleCloseModal}
                     disabled={editLoading}
-                  ></button>
+                  >
+                    X
+                  </button>
                 </div>
                 <form onSubmit={handleEditSubmit}>
                   <div className="modal-body">
@@ -835,7 +1118,7 @@ const ListTD = () => {
                         <p className="mt-2">Memuat data acara...</p>
                       </div>
                     ) : (
-                      <div className="row">
+                      <div className="row mobile-form-row">
                         {/* Nama Acara */}
                         <div className="mb-3 col-12">
                           <label className="form-label">
@@ -849,15 +1132,16 @@ const ListTD = () => {
                             value={editFormData.namaAcara}
                             onChange={handleEditInputChange}
                             required
+                            autocomplete="off"
                           />
                         </div>
 
-                        {/* Tipe Acara - DIPERBAIKI: TAMBAH PLAYBACK */}
+                        {/* Tipe Acara */}
                         <div className="mb-3 col-12">
                           <label className="form-label d-block">
                             Tipe Acara<span className="text-danger">*</span>
                           </label>
-                          <div className="d-flex gap-3 flex-wrap">
+                          <div className="d-flex flex-column flex-sm-row gap-2 gap-sm-3 mobile-radio-group form-check form-check-inline">
                             <div className="form-check">
                               <input
                                 className="form-check-input"
@@ -925,17 +1209,28 @@ const ListTD = () => {
                             <option value="">Pilih PDU</option>
                             {pduData.map((pdu) => (
                               <option key={pdu.id} value={pdu.id}>
-                                {pdu.namePDU} - {pdu.lokasi}
+                                {pdu.namePDU} {pdu.lokasi}
                               </option>
                             ))}
                           </select>
+                          {/* <label className="form-label">PDU</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            placeholder="Enter nama PDU"
+                            name="idPDU"
+                            value={editFormData.idPDU.namePDU}
+                            onChange={handleEditInputChange}
+                            autocomplete="off"
+                            required
+                          /> */}
                         </div>
 
-                        {/* Kendala - menggunakan checkbox untuk boolean */}
+                        {/* Kendala */}
                         <div className="mb-3 col-12">
-                          <div className="form-check form-switch">
+                          <div className="form-check form-switch form-check-inline">
                             <input
-                              className="form-check-input"
+                              className="form-check-input btnKendala"
                               type="checkbox"
                               role="switch"
                               name="kendala"
@@ -957,7 +1252,7 @@ const ListTD = () => {
                           </div>
                         </div>
 
-                        {/* Bukti Dukungan Kendala - Hanya tampil jika kendala = true */}
+                        {/* Bukti Dukungan Kendala */}
                         {editFormData.kendala && (
                           <div className="mb-3 col-12">
                             <label className="form-label">
@@ -975,7 +1270,7 @@ const ListTD = () => {
                               name="buktiDukung"
                               onChange={handleEditInputChange}
                               accept=".jpg,.jpeg,.png,.pdf"
-                              required={!editingAcara?.buktiDukung} // Wajib jika tidak ada file lama
+                              required={!editingAcara?.buktiDukung}
                             />
                             <small className="text-muted">
                               {editingAcara?.buktiDukung
@@ -985,7 +1280,7 @@ const ListTD = () => {
                           </div>
                         )}
 
-                        {/* Keterangan Kendala - Hanya tampil jika kendala = true */}
+                        {/* Keterangan Kendala */}
                         {editFormData.kendala && (
                           <div className="mb-3 col-12">
                             <label className="form-label">
@@ -1006,7 +1301,7 @@ const ListTD = () => {
                       </div>
                     )}
                   </div>
-                  <div className="modal-footer">
+                  <div className="modal-footer mobile-modal-footer">
                     <button
                       type="button"
                       className="btn btn-secondary"
@@ -1035,7 +1330,7 @@ const ListTD = () => {
             className="modal fade show"
             style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)' }}
           >
-            <div className="modal-dialog">
+            <div className="modal-dialog mobile-modal">
               <div className="modal-content">
                 <div className="modal-header">
                   <h5 className="modal-title text-danger">
@@ -1063,7 +1358,7 @@ const ListTD = () => {
                     Data yang dihapus tidak dapat dikembalikan.
                   </small>
                 </div>
-                <div className="modal-footer">
+                <div className="modal-footer mobile-modal-footer">
                   <button
                     type="button"
                     className="btn btn-secondary"

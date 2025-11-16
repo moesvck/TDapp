@@ -1,15 +1,16 @@
 .title {
   font-weight: bold;
   margin: 0;
-  font-size: 40px;
-  padding: 20px 0;
+  font-size: 3rem;
+  padding-bottom: 5px;
+  line-height: 1.2;
 }
 
 .icon {
-  width: 20px;
-  height: 20px;
-  margin: 0 5px;
+  width: 18px;
+  height: 18px;
 }
+
 /* Di file assets/css/listtd.css */
 
 /* Style untuk baris dengan kendala (merah) */
@@ -19,6 +20,16 @@
 }
 
 .table tbody tr.alert-danger:hover {
+  background-color: #f5c6cb !important;
+}
+
+/* Style untuk card dengan kendala di mobile */
+.card.alert-danger {
+  border-left: 4px solid #dc3545;
+  background-color: #f8d7da !important;
+}
+
+.card.alert-danger:hover {
   background-color: #f5c6cb !important;
 }
 
@@ -77,4 +88,476 @@
 .spinner-border {
   width: 1.5rem;
   height: 1.5rem;
+}
+
+/* Header Styling */
+.listtd-container .container-fluid {
+  padding: 0 20px;
+}
+
+/* Welcome info styling */
+.vr {
+  height: 20px;
+  opacity: 0.5;
+}
+
+/* Info alert styling */
+.alert-info {
+  background-color: #d1ecf1;
+  border-color: #bee5eb;
+  color: #0c5460;
+  padding: 0.5rem 1rem;
+  margin-bottom: 0;
+}
+
+/* Improved Mobile Header */
+.mobile-header {
+  padding: 25px 0px 0px 0px;
+}
+
+.mobile-socket-badge {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+}
+
+.mobile-logout-btn {
+  padding: 6px 12px;
+  font-size: 0.875rem;
+}
+
+/* Improved Info Section Layout */
+.mobile-info-section {
+  padding: 10px 0;
+}
+
+.mobile-info-alert {
+  min-width: auto;
+  width: 100%;
+  text-align: left;
+}
+
+.mobile-create-btn {
+  white-space: nowrap;
+  padding: 8px 16px;
+  font-size: 0.875rem;
+}
+
+/* Improved Mobile Card Layout */
+.mobile-acara-list {
+  margin: 0 -5px;
+}
+
+.mobile-acara-card {
+  margin-bottom: 15px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mobile-card-header {
+  width: 100%;
+}
+
+.mobile-card-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+  line-height: 1.3;
+}
+
+.mobile-status-badge {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+}
+
+.mobile-date-time,
+.mobile-td-pdu {
+  font-size: 0.85rem;
+}
+
+.mobile-tipe-acara .badge {
+  font-size: 0.8rem;
+}
+
+.mobile-keterangan {
+  font-size: 0.85rem;
+}
+
+.mobile-action-buttons {
+  width: 100%;
+}
+
+.mobile-edit-btn,
+.mobile-delete-btn {
+  flex: 1;
+  max-width: 120px;
+  font-size: 0.8rem;
+  padding: 6px 12px;
+}
+
+.mobile-no-action {
+  font-size: 0.8rem;
+}
+
+/* Improved Modal for Mobile */
+.mobile-modal {
+  margin: 20px auto;
+}
+
+.mobile-modal-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.mobile-form-row {
+  gap: 15px;
+}
+
+.mobile-radio-group {
+  flex-wrap: wrap;
+}
+
+.mobile-modal-footer {
+  padding: 15px;
+  gap: 10px;
+}
+
+.mobile-modal-footer .btn {
+  flex: 1;
+  min-width: 100px;
+}
+
+.btn {
+  margin: 0px 5px;
+}
+
+.me-2 {
+  margin: 0px 2px;
+}
+/* Responsive Design */
+@media (max-width: 768px) {
+  .title {
+    font-size: 1.8rem !important;
+    text-align: center;
+  }
+
+  .listtd-container .container-fluid {
+    padding: 0 15px;
+  }
+
+  .btn-group .btn {
+    padding: 0.25rem 0.5rem;
+  }
+
+  .modal-dialog {
+    margin: 20px 10px;
+  }
+
+  .card {
+    margin-bottom: 20px;
+  }
+
+  .card-body {
+    padding: 15px;
+  }
+
+  /* Improve mobile table appearance */
+  .table-responsive {
+    font-size: 0.875rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.5rem;
+  }
+
+  /* Mobile header adjustments */
+  .row.align-items-center.mb-4 {
+    margin-bottom: 1rem !important;
+  }
+
+  .text-md-end {
+    text-align: center !important;
+    margin-top: 1rem;
+  }
+
+  /* Improved responsive layout for info section */
+  .mobile-header {
+    text-align: center;
+  }
+
+  .mobile-info-section {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .mobile-info-alert {
+    margin-bottom: 15px;
+    text-align: center;
+  }
+
+  .mobile-create-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .mobile-card-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+
+  .mobile-status-badge {
+    margin-top: 5px;
+    align-self: flex-start;
+  }
+}
+
+@media (max-width: 576px) {
+  .title {
+    font-size: 1.5rem !important;
+    padding-bottom: 0px;
+  }
+
+  .alert-info {
+    font-size: 0.875rem;
+    padding: 0.5rem;
+  }
+
+  .btn {
+    font-size: 0.875rem;
+    margin: 3px;
+  }
+
+  .modal-body .form-label {
+    font-size: 0.9rem;
+  }
+
+  .modal-body .form-control {
+    font-size: 0.9rem;
+  }
+
+  /* Stack buttons vertically on very small screens */
+  .btn-group {
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .btn-group .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Mobile info section */
+  .d-flex.justify-content-between.align-items-center.flex-wrap {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .alert-info .d-flex {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+
+  .mobile-modal {
+    margin: 10px;
+  }
+
+  .mobile-modal .modal-content {
+    border-radius: 8px;
+  }
+
+  .mobile-action-buttons {
+    flex-direction: column;
+  }
+
+  .mobile-edit-btn,
+  .mobile-delete-btn {
+    max-width: none;
+    width: 100%;
+  }
+  a {
+    margin: 0px !important;
+  }
+}
+
+/* Improve card layout for mobile */
+.card {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border: 1px solid #dee2e6;
+}
+
+.card-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Better spacing for mobile cards */
+.mobile-card .row {
+  margin-bottom: 0.5rem;
+}
+
+.mobile-card .col-6 {
+  margin-bottom: 0.25rem;
+}
+
+/* Responsive button groups */
+@media (max-width: 400px) {
+  .d-flex.gap-2 {
+    gap: 5px !important;
+  }
+
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+  }
+}
+
+/* Animation for notifications */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Socket indicator responsive */
+@media (max-width: 768px) {
+  .badge {
+    font-size: 0.75rem;
+  }
+}
+
+/* Desktop specific improvements */
+@media (min-width: 769px) {
+  .row.align-items-center.mb-4 {
+    margin-bottom: 2rem !important;
+  }
+
+  .alert-info {
+    min-width: 400px;
+  }
+
+  .d-flex.justify-content-between.align-items-center.flex-wrap {
+    gap: 1rem;
+  }
+
+  .mobile-info-section {
+    align-items: center;
+  }
+
+  .mobile-info-alert {
+    width: auto;
+    text-align: left;
+  }
+
+  .mobile-create-btn {
+    width: auto;
+  }
+}
+
+/* Ensure proper alignment for info and button */
+.mobile-info-section .alert-info {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.mobile-info-section .btn-success {
+  flex-shrink: 0;
+}
+
+/* Additional responsive improvements */
+@media (max-width: 1200px) {
+  .title {
+    font-size: 2rem;
+  }
+}
+
+/* Ensure proper spacing on all devices */
+.listtd-container {
+  min-height: 100vh;
+  background-color: #f8f9fa;
+}
+
+.container-fluid {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Button hover effects */
+.btn-outline-primary:hover,
+.btn-outline-danger:hover {
+  transform: translateY(-1px);
+  transition: all 0.2s ease;
+}
+
+/* Card hover effects for mobile */
+.card:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transition: box-shadow 0.2s ease;
+}
+
+/* Table row hover effects */
+.table tbody tr:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Form control focus states */
+.form-control:focus {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Custom scrollbar for table */
+.table-responsive::-webkit-scrollbar {
+  height: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Fix for very small screens */
+@media (max-width: 360px) {
+  .mobile-card-title {
+    font-size: 1rem;
+  }
+
+  .mobile-date-time .col-6,
+  .mobile-td-pdu .col-6 {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+}
+
+.btn-close {
+  border-radius: 10px;
+  border: 1px solid rgba(10, 10, 10, 0.933);
+  background: #9ea1a1;
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  padding: 5px 15px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: transform 80ms ease-in;
+  cursor: pointer;
 }

@@ -23,13 +23,13 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = () => {
     const storedToken = getToken();
-    console.log('🔐 Checking auth, token found:', !!storedToken);
+    // console.log('🔐 Checking auth, token found:', !!storedToken);
 
     if (storedToken) {
       try {
         // Decode token untuk mendapatkan user info
         const payload = JSON.parse(atob(storedToken.split('.')[1]));
-        console.log('🔓 Decoded token payload:', payload);
+        // console.log('🔓 Decoded token payload:', payload);
 
         setUser({
           userId: payload.userId,
@@ -39,9 +39,9 @@ export const AuthProvider = ({ children }) => {
         });
         setTokenState(storedToken); // ✅ SET TOKEN STATE
         setIsAuthenticated(true);
-        console.log('✅ User authenticated:', payload.name);
+        // console.log('✅ User authenticated:', payload.name);
       } catch (error) {
-        console.error('❌ Error decoding token:', error);
+        // console.error('❌ Error decoding token:', error);
         logout();
       }
     }
@@ -49,7 +49,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = (newToken, userData = null, remember = false) => {
-    console.log('🔑 Login function called with token:', !!newToken);
+    // console.log('🔑 Login function called with token:', !!newToken);
 
     setToken(newToken, remember);
     setTokenState(newToken); // ✅ SET TOKEN STATE
@@ -65,18 +65,18 @@ export const AuthProvider = ({ children }) => {
           role: payload.role,
         };
       } catch (error) {
-        console.error('❌ Error decoding token during login:', error);
+        // console.error('❌ Error decoding token during login:', error);
         return;
       }
     }
 
     setUser(userData);
     setIsAuthenticated(true);
-    console.log('✅ User logged in successfully:', userData.name);
+    // console.log('✅ User logged in successfully:', userData.name);
   };
 
   const logout = () => {
-    console.log('🚪 Logging out user');
+    // console.log('🚪 Logging out user');
     removeToken();
     setUser(null);
     setTokenState(null); // ✅ RESET TOKEN STATE

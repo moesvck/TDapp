@@ -32,14 +32,14 @@ const Login = () => {
         password,
       });
 
-      console.log('Login response:', response.data);
+      // console.log('Login response:', response.data);
 
       if (response.data.accessToken) {
         const accessToken = response.data.accessToken;
 
         // ✅ DECODE TOKEN UNTUK MENDAPATKAN USER DATA
         const decodedToken = jwtDecode(accessToken);
-        console.log('Decoded token:', decodedToken);
+        // console.log('Decoded token:', decodedToken);
 
         const userData = {
           id: decodedToken.userId,
@@ -50,7 +50,7 @@ const Login = () => {
 
         // ✅ GUNAKAN LOGIN FUNCTION DARI AUTH CONTEXT
         login(accessToken, userData, true);
-        console.log('Login berhasil, user role:', userData.role);
+        // console.log('Login berhasil, user role:', userData.role);
 
         // ✅ REDIRECT BERDASARKAN ROLE USER
         switch (userData.role) {
@@ -71,7 +71,7 @@ const Login = () => {
         setMsg('Token tidak diterima dari server');
       }
     } catch (error) {
-      console.error('Login error:', error);
+      // console.error('Login error:', error);
       if (error.response) {
         setMsg(error.response.data.message || 'Login gagal');
       } else if (error.request) {
@@ -110,13 +110,13 @@ const Login = () => {
   }, []);
 
   return (
-    <div>
+    <div className="login-wrapper">
       <div className="container" id="container">
         <div className="form-container sign-up-container">
           <form action="#">
             <h1>Create Account</h1>
             <span>Scan QR Code Here</span>
-            <img src={QRcodes} alt="QR Code" />
+            <img src={QRcodes} alt="QR Code" className="img-fluid qr-code" />
           </form>
         </div>
 
@@ -128,7 +128,7 @@ const Login = () => {
               </div>
             )}
 
-            <img src={Logo} className="logo" alt="logo TVRI" width={150} />
+            <img src={Logo} className="logo img-fluid" alt="logo TVRI" />
             <h1>Technical Director</h1>
             <span>Use your account</span>
 
@@ -139,6 +139,7 @@ const Login = () => {
               onChange={(e) => setUsername(e.target.value)}
               disabled={loading}
               required
+              className="form-control"
             />
 
             <input
@@ -148,14 +149,21 @@ const Login = () => {
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
               required
+              className="form-control"
             />
 
-            <a href="#">Forgot your password?</a>
-            <button type="submit" className="btn-login" disabled={loading}>
+            <a href="#" className="forgot-password">
+              Forgot your password?
+            </a>
+            <button
+              type="submit"
+              className="btn-login w-100"
+              disabled={loading}
+            >
               {loading ? 'Loading...' : 'Login'}
             </button>
 
-            <p>Copyright &copy; 2025 IT TVRI SUMUT</p>
+            <p className="copyright">Copyright &copy; 2025 IT TVRI SUMUT</p>
           </form>
         </div>
 

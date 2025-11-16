@@ -160,3 +160,146 @@ export const logout = async (req, res) => {
     res.status(500).json({ message: 'Logout failed', error: error.message });
   }
 };
+export const deleteUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Cek role user dari token - HANYA admin yang boleh hapus user
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        message: 'Access denied. Admin role required to delete users.',
+      });
+    }
+
+    // Cek apakah user yang akan dihapus ada
+    const user = await Users.findOne({
+      where: { id },
+      attributes: ['id', 'name', 'username', 'role'],
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prevent admin from deleting themselves
+    if (user.id === req.user.userId) {
+      return res.status(400).json({
+        message: 'Cannot delete your own account.',
+      });
+    }
+
+    // Hapus user dari database
+    await Users.destroy({
+      where: { id },
+    });
+
+    res.json({
+      message: 'User deleted successfully',
+      deletedUser: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error('Error in deleteUserById:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const updateUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, username, role, password, confirmPassword } = req.body;
+
+    // Cek role user dari token - HANYA admin yang boleh update user
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        message: 'Access denied. Admin role required to update users.',
+      });
+    }
+
+    // Cek apakah user yang akan diupdate ada
+    const user = await Users.findOne({ where: { id } });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Validasi data yang diinput
+    const errors = [];
+
+    if (password) {
+      if (password.length < 6) {
+        errors.push('Password must be at least 6 characters long');
+      }
+      if (password !== confirmPassword) {
+        errors.push('Password and confirm password do not match');
+      }
+    }
+
+    if (username && username.length < 3) {
+      errors.push('Username must be at least 3 characters long');
+    }
+
+    if (name && name.length < 2) {
+      errors.push('Name must be at least 2 characters long');
+    }
+
+    if (role && !['admin', 'staff', 'user'].includes(role)) {
+      errors.push('Role must be one of: admin, staff, user');
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        message: 'Validation failed',
+        errors: errors,
+      });
+    }
+
+    // Cek jika username sudah digunakan oleh user lain
+    if (username && username !== user.username) {
+      const existingUser = await Users.findOne({ where: { username } });
+      if (existingUser) {
+        return res.status(400).json({ message: 'Username already exists' });
+      }
+    }
+
+    // Siapkan data untuk update
+    const updateData = {};
+
+    if (name) updateData.name = name;
+    if (username) updateData.username = username;
+    if (role) updateData.role = role;
+
+    // Hash password baru jika diupdate
+    if (password) {
+      const salt = await bcrypt.genSalt(10);
+      updateData.password = await bcrypt.hash(password, salt);
+    }
+
+    // Jika tidak ada data yang diupdate
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        message: 'No data provided for update',
+      });
+    }
+
+    // Update user
+    await Users.update(updateData, { where: { id } });
+
+    // Ambil data user yang sudah diupdate (tanpa password)
+    const updatedUser = await Users.findOne({
+      where: { id },
+      attributes: ['id', 'name', 'username', 'role'],
+    });
+
+    res.json({
+      message: 'User updated successfully',
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error('Error in updateUserById:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

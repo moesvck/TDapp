@@ -5,6 +5,8 @@ import {
   register,
   login,
   logout,
+  deleteUserById,
+  updateUserById,
 } from '../controllers/User.js';
 import { verifyToken } from '../midleware/VerifyToken.js'; // untuk verifikasi aksek harus login agara dapat token
 import { refreshToken } from '../controllers/RefreshToken.js';
@@ -33,6 +35,8 @@ router.post('/register', register);
 router.post('/login', login);
 router.get('/token', refreshToken);
 router.delete('/logout', logout);
+router.patch('/users/:id', verifyToken, updateUserById);
+router.delete('/users/:id', verifyToken, deleteUserById);
 
 router.get('/pdu', verifyToken, getPDU);
 router.post('/pdu', verifyToken, createPDU);

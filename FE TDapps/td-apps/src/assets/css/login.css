@@ -7,20 +7,29 @@
 body.login-page {
   font-family: 'Montserrat', sans-serif;
   background: #f6f5f7;
-  display: flex;
+  /* display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: center; */
   align-items: center;
   height: 100vh;
-  margin: -20px 0 50px;
-  margin-top: 20px;
-  padding-top: 20px;
+  margin: 150px 0px;
+  padding: 20px;
+}
+
+.login-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .logo {
-  margin-top: 20px;
-  padding-bottom: 20px;
+  margin-top: 10px;
+  padding: 15px 0px;
+  max-width: 150px;
+  height: auto;
 }
+
 h1 {
   font-weight: bold;
   margin: 0;
@@ -52,8 +61,8 @@ a {
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.2), 0 10px 10px rgba(0, 0, 0, 0.2);
   position: relative;
   overflow: hidden;
-  width: 768px;
-  max-width: 100%;
+  width: 100%;
+  max-width: 768px;
   min-height: 480px;
 }
 
@@ -61,7 +70,7 @@ a {
   background: #fff;
   display: flex;
   flex-direction: column;
-  padding: 0 50px;
+  padding: 10px 50px;
   height: 100%;
   justify-content: center;
   align-items: center;
@@ -89,6 +98,16 @@ a {
   padding: 12px 15px;
   margin: 8px 0;
   width: 100%;
+  border-radius: 5px;
+}
+
+.form-control {
+  background: #eee;
+  border: none;
+  padding: 12px 15px;
+  margin: 8px 0;
+  width: 100%;
+  border-radius: 5px;
 }
 
 button,
@@ -103,6 +122,7 @@ button,
   letter-spacing: 1px;
   text-transform: uppercase;
   transition: transform 80ms ease-in;
+  cursor: pointer;
 }
 
 button:active {
@@ -237,4 +257,221 @@ button.ghost {
   padding: 10px;
   font-size: 16px;
   z-index: 9999; /* biar selalu di atas elemen lain */
+}
+/* Burger Menu Styles */
+.burger-menu-container {
+  position: relative;
+}
+
+.burger-menu-btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  border-radius: 4px;
+  transition: background-color 0.3s ease;
+}
+
+.burger-menu-btn:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.burger-icon {
+  width: 24px;
+  height: 24px;
+  filter: invert(0.5);
+}
+
+.burger-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 200px;
+  z-index: 1000;
+  margin-top: 5px;
+  overflow: hidden;
+}
+
+.burger-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  text-decoration: none;
+  color: #333;
+  font-size: 0.9rem;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid #f8f9fa;
+}
+
+.burger-menu-item:last-child {
+  border-bottom: none;
+}
+
+.burger-menu-item:hover {
+  background-color: #f8f9fa;
+  text-decoration: none;
+  color: #333;
+}
+
+.burger-menu-logout {
+  color: #dc3545;
+}
+
+.burger-menu-logout:hover {
+  background-color: #f8d7da;
+}
+
+.burger-menu-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 10px;
+}
+
+/* Responsive Styles */
+@media (max-width: 768px) {
+  body.login-page {
+    padding: 10px;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .container {
+    min-height: 600px;
+    max-width: 100%;
+  }
+
+  .form-container form {
+    padding: 0 30px;
+  }
+
+  .logo {
+    max-width: 120px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  .qr-code {
+    max-width: 150px;
+  }
+}
+
+@media (max-width: 576px) {
+  body.login-page {
+    padding: 5px;
+  }
+
+  .container {
+    min-height: 100vh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .form-container form {
+    padding: 0 20px;
+  }
+
+  .logo {
+    max-width: 100px;
+    margin-top: 5px;
+    padding-bottom: 10px;
+  }
+
+  h1 {
+    font-size: 16px;
+  }
+
+  p {
+    font-size: 12px;
+    margin: 15px 0 20px;
+  }
+
+  span {
+    font-size: 11px;
+  }
+
+  .form-container input,
+  .form-control {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  button,
+  .btn-login {
+    padding: 10px 30px;
+    font-size: 11px;
+  }
+
+  .overlay-panel {
+    padding: 0 20px;
+  }
+
+  /* Mobile-specific layout */
+  .sign-in-container,
+  .sign-up-container {
+    width: 100%;
+  }
+
+  .overlay-container {
+    display: none;
+  }
+
+  .container.right-panel-active .sign-in-container {
+    transform: translateX(-100%);
+  }
+
+  .container.right-panel-active .sign-up-container {
+    transform: translateX(0);
+  }
+
+  .copyright {
+    font-size: 12px;
+    margin-top: 10px;
+  }
+
+  .forgot-password {
+    font-size: 12px;
+  }
+}
+
+/* Additional Bootstrap compatibility */
+.img-fluid {
+  max-width: 60%;
+  height: auto;
+}
+
+.w-100 {
+  width: 100% !important;
+}
+
+/* Animation for better mobile experience */
+@media (max-width: 576px) {
+  .form-container {
+    transition: transform 0.4s ease-in-out;
+  }
+
+  body.login-page {
+    margin: 0px 0px;
+  }
+  .burger-menu-dropdown {
+    min-width: 180px;
+  }
+
+  .burger-menu-item {
+    padding: 10px 14px;
+    font-size: 0.85rem;
+  }
+}
+
+@media (min-width: 992px) {
+  .burger-menu-container {
+    display: none;
+  }
 }

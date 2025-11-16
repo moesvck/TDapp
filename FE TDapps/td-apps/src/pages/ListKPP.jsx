@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import '../assets/css/listtd.css';
 import { NavLink, useNavigate } from 'react-router-dom';
-import Print from '../assets/print.svg';
+// import Print from '../assets/print.svg';
+import Logout from '../assets/logout.svg';
+import '../assets/css/listkpp.css';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
+import io from 'socket.io-client';
 
 const ListKPP = () => {
   const [pduData, setPduData] = useState([]);
@@ -14,6 +17,8 @@ const ListKPP = () => {
   const [userDataMap, setUserDataMap] = useState({});
   const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState('');
+  const [socket, setSocket] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
   const {
     token,
     user,
@@ -25,20 +30,137 @@ const ListKPP = () => {
   const navigate = useNavigate();
 
   // ===============================
-  // FUNGSI REFRESH TOKEN
+  // SOCKET.IO SETUP YANG DIOPTIMASI
   // ===============================
 
+  useEffect(() => {
+    // Early return yang ketat
+    if (authLoading || !isAuthenticated || !token) {
+      return;
+    }
+
+    // CEGAH MULTIPLE CONNECTIONS - ini penyebab utama lemot
+    if (socket && (socket.connected || socket.connecting)) {
+      console.log('⚡ Socket already active, skipping reconnection');
+      return;
+    }
+
+    console.log('🔄 Initializing optimized Socket.IO connection...');
+
+    const newSocket = io('http://localhost:3000', {
+      auth: { token },
+      transports: ['websocket', 'polling'],
+      timeout: 5000, // Lebih pendek
+      reconnection: true,
+      reconnectionAttempts: 2, // Kurangi attempts
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 5000,
+      autoConnect: true,
+      forceNew: false, // PENTING: reuse connection
+      multiplex: true,
+      closeOnBeforeunload: true, // Biarkan browser handle
+    });
+
+    setSocket(newSocket);
+
+    // DEBOUNCE UTILITY - tambahkan di sini
+    const debounce = (func, wait) => {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    };
+
+    // DEBOUNCED HANDLERS untuk prevent terlalu banyak updates
+    const debouncedPduUpdate = debounce((data) => {
+      console.log('🔄 Real-time PDU update (debounced)');
+      handleRealTimeUpdate(data);
+    }, 1000); // 1 second debounce
+
+    const debouncedAcaraUpdate = debounce((data) => {
+      console.log('🔄 Real-time Acara update (debounced)');
+      handleRealTimeAcaraUpdate(data);
+    }, 1000);
+
+    // SIMPLE EVENT HANDLERS
+    const handleConnect = () => {
+      console.log('✅ Socket.IO connected');
+      setIsConnected(true);
+    };
+
+    const handleDisconnect = (reason) => {
+      console.log('❌ Socket.IO disconnected:', reason);
+      setIsConnected(false);
+    };
+
+    const handleConnectError = (error) => {
+      console.error('❌ Socket.IO connection error:', error.message);
+      setIsConnected(false);
+    };
+
+    const handleDataRefreshed = (data) => {
+      console.log('🔄 Manual refresh via socket');
+      // Batch updates dengan setTimeout
+      setTimeout(() => {
+        setPduData((prev) => data.pduData || prev);
+        setAcaraData((prev) => data.acaraData || prev);
+        setDataLoading(false);
+      }, 0);
+    };
+
+    // ATTACH EVENT LISTENERS
+    newSocket.on('connect', handleConnect);
+    newSocket.on('disconnect', handleDisconnect);
+    newSocket.on('connect_error', handleConnectError);
+    newSocket.on('pduUpdated', debouncedPduUpdate);
+    newSocket.on('acaraUpdated', debouncedAcaraUpdate);
+    newSocket.on('dataRefreshed', handleDataRefreshed);
+
+    // CLEANUP FUNCTION YANG EFEKTIF
+    return () => {
+      console.log('🧹 Cleaning up Socket.IO connection');
+
+      if (newSocket) {
+        // Remove listeners secara eksplisit
+        newSocket.off('connect', handleConnect);
+        newSocket.off('disconnect', handleDisconnect);
+        newSocket.off('connect_error', handleConnectError);
+        newSocket.off('pduUpdated', debouncedPduUpdate);
+        newSocket.off('acaraUpdated', debouncedAcaraUpdate);
+        newSocket.off('dataRefreshed', handleDataRefreshed);
+
+        // Disconnect hanya jika masih connected
+        if (newSocket.connected) {
+          newSocket.disconnect();
+        }
+      }
+    };
+  }, [authLoading, isAuthenticated, token]);
+
+  // ===============================
+  // TOKEN MANAGEMENT & REFRESH SYSTEM
+  // ===============================
+
+  /**
+   * Fungsi refresh token yang PROAKTIF
+   */
   const refreshAuthToken = async () => {
     try {
-      console.log('🔄 Attempting to refresh token...');
+      // console.log('🔄 Attempting to refresh token...');
 
       const response = await axios.get('http://localhost:3000/token', {
-        withCredentials: true,
+        withCredentials: true, // ✅ mengirim refresh token dari cookies
       });
 
       if (response.data.accessToken) {
         console.log('✅ Token refreshed successfully');
 
+        // Decode token baru untuk mendapatkan user data
         const payload = JSON.parse(
           atob(response.data.accessToken.split('.')[1])
         );
@@ -50,6 +172,7 @@ const ListKPP = () => {
           role: payload.role,
         };
 
+        // ✅ Update token dan user data di context/auth
         login(response.data.accessToken, userData, true);
         return response.data.accessToken;
       }
@@ -64,14 +187,62 @@ const ListKPP = () => {
     }
   };
 
+  /**
+   * Cek apakah token akan segera expired
+   */
+  const isTokenExpiringSoon = (token) => {
+    if (!token) return true;
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const expTime = payload.exp * 1000; // Convert to milliseconds
+      const currentTime = Date.now();
+      const bufferTime = 5 * 60 * 1000; // 5 minutes buffer
+
+      return expTime - currentTime < bufferTime;
+    } catch (error) {
+      console.error('Error checking token expiry:', error);
+      return true;
+    }
+  };
+
+  /**
+   * Setup proactive token refresh system
+   */
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+
+    const checkTokenExpiry = async () => {
+      if (isTokenExpiringSoon(token)) {
+        console.log('🔄 Token hampir expired, refreshing proactively...');
+        await refreshAuthToken();
+      }
+    };
+
+    // Check token expiry setiap 1 menit
+    const tokenCheckInterval = setInterval(checkTokenExpiry, 60000);
+
+    // Check immediately on mount
+    checkTokenExpiry();
+
+    return () => clearInterval(tokenCheckInterval);
+  }, [token, isAuthenticated]);
+
   // ===============================
-  // AXIOS INTERCEPTORS
+  // AXIOS INTERCEPTORS DENGAN REFRESH TOKEN
   // ===============================
 
   useEffect(() => {
     const requestInterceptor = axios.interceptors.request.use(
-      (config) => {
-        if (token) {
+      async (config) => {
+        // ✅ Proactive token refresh sebelum request jika token hampir expired
+        if (token && isTokenExpiringSoon(token)) {
+          // console.log('🔄 Token expiring soon, refreshing before request...');
+          const newToken = await refreshAuthToken();
+          if (newToken) {
+            config.headers.Authorization = `Bearer ${newToken}`;
+          }
+        } else if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
         return config;
@@ -86,6 +257,7 @@ const ListKPP = () => {
       async (error) => {
         const originalRequest = error.config;
 
+        // ✅ Handle token expired (401)
         if (error.response?.status === 401 && !originalRequest._retry) {
           console.log('🔐 Token expired, refreshing...');
           originalRequest._retry = true;
@@ -101,6 +273,18 @@ const ListKPP = () => {
           }
         }
 
+        // ✅ Handle access forbidden (403) - mungkin token invalid
+        if (error.response?.status === 403 && !originalRequest._retry) {
+          console.log('🔐 Access forbidden, refreshing token...');
+          originalRequest._retry = true;
+
+          const newToken = await refreshAuthToken();
+          if (newToken) {
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return axios(originalRequest);
+          }
+        }
+
         return Promise.reject(error);
       }
     );
@@ -110,6 +294,63 @@ const ListKPP = () => {
       axios.interceptors.response.eject(responseInterceptor);
     };
   }, [token, login, logout, navigate]);
+
+  // ===============================
+  // HANDLER REAL-TIME UPDATES
+  // ===============================
+
+  const handleRealTimeUpdate = (updatedData) => {
+    setPduData((prevData) => {
+      // Cek apakah data sudah ada
+      const existingIndex = prevData.findIndex(
+        (item) => item.id === updatedData.id
+      );
+
+      if (existingIndex >= 0) {
+        // Update data yang sudah ada
+        const newData = [...prevData];
+        newData[existingIndex] = { ...newData[existingIndex], ...updatedData };
+        return newData;
+      } else {
+        // Tambah data baru
+        return [updatedData, ...prevData];
+      }
+    });
+
+    // Show notification atau update UI lainnya
+    showNotification(`Data PDU "${updatedData.namePDU}" diperbarui`);
+  };
+
+  const handleRealTimeAcaraUpdate = (updatedData) => {
+    setAcaraData((prevData) => {
+      const existingIndex = prevData.findIndex(
+        (item) => item.id === updatedData.id
+      );
+
+      if (existingIndex >= 0) {
+        const newData = [...prevData];
+        newData[existingIndex] = { ...newData[existingIndex], ...updatedData };
+        return newData;
+      } else {
+        return [updatedData, ...prevData];
+      }
+    });
+
+    showNotification(`Data Acara "${updatedData.namaAcara}" diperbarui`);
+  };
+
+  const showNotification = (message) => {
+    // Anda bisa menggunakan toast library atau custom notification
+    console.log('💫 Notification:', message);
+
+    // Contoh simple alert - bisa diganti dengan toast yang lebih elegant
+    if (window.showNotification) {
+      window.showNotification(message);
+    } else {
+      // Fallback ke console log
+      console.log('💫', message);
+    }
+  };
 
   // ===============================
   // FUNGSI FETCH DATA
@@ -226,7 +467,7 @@ const ListKPP = () => {
   };
 
   // ===============================
-  // FUNGSI BANTUAN DATA BERSIH
+  // FUNGSI BANTUAN DATA BERSIH (TETAP SAMA)
   // ===============================
 
   const getCleanPDUData = (pdu) => {
@@ -246,7 +487,7 @@ const ListKPP = () => {
   };
 
   // ===============================
-  // FUNGSI HELPER LAYOUT - DIPERBAIKI
+  // FUNGSI HELPER LAYOUT - DIPERBAIKI (TETAP SAMA)
   // ===============================
 
   /**
@@ -258,7 +499,7 @@ const ListKPP = () => {
 
     doc.setFontSize(16);
     doc.setTextColor(40, 40, 40);
-    doc.text('BUKTI DOKUMENTASI', pageWidth / 2, currentY, {
+    doc.text('LAPORAN HARIAN TECHNICAL DIRECTION', pageWidth / 2, currentY, {
       align: 'center',
     });
     currentY += 8;
@@ -306,16 +547,15 @@ const ListKPP = () => {
   };
 
   // ===============================
-  // FUNGSI UTAMA PRINT DENGAN EMBED PDF - DIPERBAIKI
+  // FUNGSI UTAMA PRINT DENGAN EMBED PDF - DIPERBAIKI (TETAP SAMA)
   // ===============================
 
   /**
-   * Generate PDF data PDU dan acara (HALAMAN 1) - DIPERBAIKI (TANPA FOOTER)
+   * Generate PDF data PDU dan acara (HALAMAN 1) - DIPERBAIKI
    */
   const generateDataPDF = (pdu) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
 
     // ===============================
     // HALAMAN 1: HEADER
@@ -323,7 +563,7 @@ const ListKPP = () => {
     let currentY = addStandardHeader(
       doc,
       'DETAIL DATA PDU DAN ACARA',
-      'TVRI SUMUT - Technical Director'
+      'TVRI SUMUT - Bidang Teknik'
     );
 
     // ===============================
@@ -365,17 +605,18 @@ const ListKPP = () => {
         0: {
           fontStyle: 'bold',
           fillColor: [240, 240, 240],
-          cellWidth: 60,
+          cellWidth: 55, // Diperkecil sedikit
         },
         1: {
-          cellWidth: 120,
+          cellWidth: 125, // Disesuaikan
           fillColor: [255, 255, 255],
         },
       },
-      margin: { top: currentY },
+      margin: { top: currentY, right: 14, bottom: 10, left: 14 },
+      tableWidth: 'wrap',
     });
 
-    currentY = doc.lastAutoTable.finalY + 20;
+    currentY = doc.lastAutoTable.finalY + 15;
 
     // ===============================
     // DAFTAR ACARA
@@ -383,11 +624,11 @@ const ListKPP = () => {
     const acaraForThisPDU = getAcaraByPDUId(pdu.id);
 
     if (acaraForThisPDU.length > 0) {
-      // Header Acara dengan spacing yang cukup
+      // Header Acara
       doc.setFontSize(12);
       doc.setTextColor(0, 100, 0);
       doc.text(`Daftar Acara (${acaraForThisPDU.length} acara):`, 14, currentY);
-      currentY += 12;
+      currentY += 10;
 
       // Tabel Acara dengan kolom yang disesuaikan
       const acaraTableData = acaraForThisPDU.map((acara, index) => [
@@ -404,8 +645,8 @@ const ListKPP = () => {
         body: acaraTableData,
         theme: 'grid',
         styles: {
-          fontSize: 8,
-          cellPadding: 4,
+          fontSize: 7, // Diperkecil
+          cellPadding: 3,
           textColor: [0, 0, 0],
           lineWidth: 0.1,
         },
@@ -414,6 +655,7 @@ const ListKPP = () => {
           textColor: 255,
           fontStyle: 'bold',
           halign: 'center',
+          fontSize: 8,
         },
         bodyStyles: {
           fillColor: [255, 255, 255],
@@ -423,40 +665,37 @@ const ListKPP = () => {
         },
         columnStyles: {
           0: {
-            cellWidth: 12,
+            cellWidth: 10,
             halign: 'center',
           },
           1: {
-            cellWidth: 50,
+            cellWidth: 45,
             halign: 'left',
           },
           2: {
-            cellWidth: 30,
-            halign: 'center',
-          },
-          3: {
             cellWidth: 25,
             halign: 'center',
           },
+          3: {
+            cellWidth: 22,
+            halign: 'center',
+          },
           4: {
-            cellWidth: 63,
+            cellWidth: 58,
             halign: 'left',
           },
         },
-        margin: { top: currentY },
+        margin: { top: currentY, right: 14, bottom: 10, left: 14 },
+        tableWidth: 'wrap',
       });
 
-      currentY = doc.lastAutoTable.finalY + 15;
+      currentY = doc.lastAutoTable.finalY + 10;
     } else {
       doc.setFontSize(10);
       doc.setTextColor(150, 150, 150);
       doc.text('Tidak ada acara tercatat untuk PDU ini.', 14, currentY);
       currentY += 10;
     }
-
-    // ===============================
-    // TIDAK ADA FOOTER DI SINI - AKAN DITAMBAHKAN DI FUNGSI UTAMA
-    // ===============================
 
     console.log('✅ Halaman 1: Data PDU & Acara berhasil dibuat');
     return doc;
@@ -477,7 +716,10 @@ const ListKPP = () => {
   /**
    * Fungsi untuk download file dengan error handling yang better
    */
-  const downloadFile = async (fileUrl) => {
+  /**
+   * Fungsi untuk download file dengan validasi tipe file
+   */
+  const downloadFile = async (fileUrl, expectedType = null) => {
     try {
       console.log(`📥 Downloading file: ${fileUrl}`);
 
@@ -492,8 +734,13 @@ const ListKPP = () => {
         },
       });
 
+      // Validasi response data
+      if (!response.data || response.data.byteLength === 0) {
+        throw new Error('File kosong atau tidak tersedia');
+      }
+
       console.log(
-        `✅ File downloaded successfully: ${response.data.length} bytes`
+        `✅ File downloaded successfully: ${response.data.byteLength} bytes`
       );
       return response.data;
     } catch (error) {
@@ -505,22 +752,50 @@ const ListKPP = () => {
   /**
    * Render PDF page sebagai gambar sederhana dengan layout yang baik
    */
+  /**
+   * Render PDF page sebagai gambar dengan error handling yang better
+   */
   const renderPDFPageAsSimpleImage = async (doc, pdfDoc, pageNum, startY) => {
     try {
+      console.log(`🖼️ Rendering PDF page ${pageNum + 1}`);
+
+      // Validasi pdfDoc
+      if (!pdfDoc || typeof pdfDoc.getPageCount !== 'function') {
+        throw new Error('PDF document tidak valid');
+      }
+
       // Buat PDF sementara dengan hanya 1 halaman
       const tempPdf = await PDFDocument.create();
-      const [copiedPage] = await tempPdf.copyPages(pdfDoc, [pageNum]);
-      tempPdf.addPage(copiedPage);
+
+      try {
+        const [copiedPage] = await tempPdf.copyPages(pdfDoc, [pageNum]);
+        tempPdf.addPage(copiedPage);
+      } catch (copyError) {
+        console.error('❌ Error copying PDF page:', copyError);
+        throw new Error('Tidak dapat memproses halaman PDF');
+      }
 
       // Convert ke base64
       const tempPdfBytes = await tempPdf.save();
-      const base64 = arrayBufferToBase64(tempPdfBytes);
 
-      // Buat URL data untuk PDF
+      // Validasi PDF bytes
+      if (!tempPdfBytes || tempPdfBytes.length < 100) {
+        throw new Error('PDF hasil konversi tidak valid');
+      }
+
+      const base64 = arrayBufferToBase64(tempPdfBytes);
       const pdfDataUrl = `data:application/pdf;base64,${base64}`;
 
-      // Gunakan PDF.js untuk render
-      const pdf = await window.pdfjsLib.getDocument(pdfDataUrl).promise;
+      // Gunakan PDF.js untuk render dengan timeout
+      const loadingTask = window.pdfjsLib.getDocument(pdfDataUrl);
+
+      const pdf = await Promise.race([
+        loadingTask.promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('PDF loading timeout')), 10000)
+        ),
+      ]);
+
       const page = await pdf.getPage(1);
       const viewport = page.getViewport({ scale: 1.3 });
 
@@ -530,16 +805,21 @@ const ListKPP = () => {
       canvas.width = viewport.width;
       canvas.height = viewport.height;
 
-      // Render ke canvas
-      await page.render({
-        canvasContext: context,
-        viewport: viewport,
-      }).promise;
+      // Render ke canvas dengan timeout
+      await Promise.race([
+        page.render({
+          canvasContext: context,
+          viewport: viewport,
+        }).promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('PDF rendering timeout')), 15000)
+        ),
+      ]);
 
-      // Convert ke image dan tambahkan ke PDF
+      // Convert ke image
       const imgData = canvas.toDataURL('image/jpeg', 0.8);
 
-      // Hitung dimensi untuk fit di PDF dengan margin yang aman
+      // Hitung dimensi untuk fit di PDF
       const maxWidth = 170;
       const maxHeight = 180;
       let width = canvas.width;
@@ -557,17 +837,18 @@ const ListKPP = () => {
         width = width * ratio;
       }
 
-      // Center the image dengan margin yang aman
+      // Center the image
       const x = (210 - width) / 2;
       const y = startY + 5;
 
       doc.addImage(imgData, 'JPEG', x, y, width, height);
 
+      console.log(`✅ Successfully rendered PDF page ${pageNum + 1}`);
       return true;
     } catch (error) {
-      console.error('Error rendering PDF page as simple image:', error);
+      console.error(`❌ Error rendering PDF page ${pageNum + 1}:`, error);
 
-      // Fallback dengan layout yang lebih baik
+      // Fallback yang lebih informatif
       const boxStartY = startY + 10;
 
       doc.setFillColor(250, 250, 250);
@@ -577,16 +858,25 @@ const ListKPP = () => {
 
       doc.setFontSize(16);
       doc.setTextColor(200, 200, 200);
-      doc.text('📄', 105, boxStartY + 50, { align: 'center' });
+      doc.text('📄', 105, boxStartY + 40, { align: 'center' });
 
       doc.setFontSize(10);
       doc.setTextColor(150, 150, 150);
-      doc.text('Konten PDF', 105, boxStartY + 70, {
+      doc.text('Konten PDF Tidak Dapat Dimuat', 105, boxStartY + 60, {
         align: 'center',
       });
 
       doc.setFontSize(8);
-      doc.text('File PDF asli tersedia di sistem', 105, boxStartY + 80, {
+      doc.text(
+        'File mungkin korup atau format tidak didukung',
+        105,
+        boxStartY + 70,
+        {
+          align: 'center',
+        }
+      );
+
+      doc.text(`Error: ${error.message}`, 105, boxStartY + 80, {
         align: 'center',
       });
 
@@ -938,7 +1228,7 @@ const ListKPP = () => {
   };
 
   // ===============================
-  // FUNGSI BANTUAN LAINNYA
+  // FUNGSI BANTUAN LAINNYA (TETAP SAMA)
   // ===============================
 
   const getAcaraByPDUId = (pduId) => {
@@ -952,7 +1242,7 @@ const ListKPP = () => {
       return match;
     });
 
-    console.log(`📊 Total acara for PDU ${pduId}: ${filteredAcara.length}`);
+    // console.log(`📊 Total acara for PDU ${pduId}: ${filteredAcara.length}`);
 
     return filteredAcara
       .map((acara) => getCleanAcaraData(acara))
@@ -981,16 +1271,47 @@ const ListKPP = () => {
 
     filename = filename.toString().trim();
 
+    // Cek jika file invalid
+    if (
+      filename === 'null' ||
+      filename === 'undefined' ||
+      filename === 'false'
+    ) {
+      console.log('❌ Invalid filename detected:', filename);
+      return null;
+    }
+
     if (filename.startsWith('http')) {
       console.log('📁 File sudah full URL:', filename);
-      const extension = filename.split('.').pop().toLowerCase();
-      const fileType = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(
-        extension
-      )
-        ? 'image'
-        : 'pdf';
 
-      return { url: filename, fileType, filename };
+      // Extract extension dari URL dengan lebih akurat
+      const urlObj = new URL(filename);
+      const pathname = urlObj.pathname;
+      const extension = pathname.split('.').pop().toLowerCase();
+
+      // Deteksi tipe file berdasarkan extension
+      const imageExtensions = [
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'bmp',
+        'webp',
+        'svg',
+      ];
+      const pdfExtensions = ['pdf'];
+
+      const fileType = imageExtensions.includes(extension)
+        ? 'image'
+        : pdfExtensions.includes(extension)
+        ? 'pdf'
+        : 'unknown';
+
+      console.log(
+        `🔍 Detected file type: ${fileType} from extension: ${extension}`
+      );
+
+      return { url: filename, fileType, filename, extension };
     }
 
     const baseUrl = 'http://localhost:3000/uploads';
@@ -1009,18 +1330,23 @@ const ListKPP = () => {
     const encodedFilename = encodeURIComponent(filename);
     const url = `${baseUrl}/${folder}/${encodedFilename}`;
 
+    // Deteksi extension dari filename dengan lebih akurat
     const extension = filename.split('.').pop().toLowerCase();
-    const fileType = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(
-      extension
-    )
+
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
+    const pdfExtensions = ['pdf'];
+
+    const fileType = imageExtensions.includes(extension)
       ? 'image'
-      : 'pdf';
+      : pdfExtensions.includes(extension)
+      ? 'pdf'
+      : 'unknown';
 
     console.log(
-      `📁 File info - Type: ${type}, Filename: ${filename}, URL: ${url}, FileType: ${fileType}`
+      `📁 File info - Type: ${type}, Filename: ${filename}, Extension: ${extension}, URL: ${url}, FileType: ${fileType}`
     );
 
-    return { url, fileType, filename };
+    return { url, fileType, filename, extension };
   };
 
   const getTDName = (pdu) => {
@@ -1068,7 +1394,7 @@ const ListKPP = () => {
   };
 
   // ===============================
-  // FUNGSI UTAMA PRINT YANG SUDAH DIPERBAIKI - FOOTER TERPUSAT
+  // FUNGSI UTAMA PRINT YANG SUDAH DIPERBAIKI - FOOTER TERPUSAT (TETAP SAMA)
   // ===============================
 
   const printSinglePDUWithMerge = async (pdu) => {
@@ -1097,42 +1423,66 @@ const ListKPP = () => {
         fileForSurat !== 'undefined'
       ) {
         const fileInfo = getFileUrlAndType(fileForSurat, 'surat');
+
         if (fileInfo && fileInfo.url) {
-          console.log('   🖼️ Attempting to embed PDF as image...');
-          try {
-            const pdfBytes = await downloadFile(fileInfo.url);
-            const pdfDoc = await PDFDocument.load(pdfBytes);
-            const pageCount = pdfDoc.getPageCount();
-            console.log(`   📑 PDF has ${pageCount} pages`);
+          console.log(`   🔍 File type detected: ${fileInfo.fileType}`);
 
-            for (let pageNum = 0; pageNum < pageCount; pageNum++) {
-              mainPDF.addPage();
-              const currentPage = mainPDF.internal.getNumberOfPages();
+          if (fileInfo.fileType === 'image') {
+            console.log('   🖼️ Embedding image file...');
+            await addImageAsPage(
+              mainPDF,
+              fileInfo.url,
+              'Bukti Surat Perintah Operasional',
+              pageWidth,
+              pageHeight
+            );
+          } else if (fileInfo.fileType === 'pdf') {
+            console.log('   📑 Embedding PDF file...');
+            try {
+              const pdfBytes = await downloadFile(fileInfo.url);
+              const pdfDoc = await PDFDocument.load(pdfBytes);
+              const pageCount = pdfDoc.getPageCount();
+              console.log(`   📑 PDF has ${pageCount} pages`);
 
-              let currentY = addStandardHeader(
+              for (let pageNum = 0; pageNum < pageCount; pageNum++) {
+                mainPDF.addPage();
+                const currentPage = mainPDF.internal.getNumberOfPages();
+
+                let currentY = addStandardHeader(
+                  mainPDF,
+                  'Bukti Surat Perintah Operasional',
+                  pageCount > 1 ? `Halaman ${pageNum + 1}/${pageCount}` : null
+                );
+
+                await renderPDFPageAsSimpleImage(
+                  mainPDF,
+                  pdfDoc,
+                  pageNum,
+                  currentY
+                );
+              }
+              console.log('   ✅ Successfully embedded PDF pages');
+            } catch (embedError) {
+              console.error(
+                '   ❌ Failed to embed PDF, using fallback:',
+                embedError
+              );
+              addFileInfoPage(
                 mainPDF,
                 'Bukti Surat Perintah Operasional',
-                pageCount > 1 ? `Halaman ${pageNum + 1}/${pageCount}` : null
-              );
-
-              await renderPDFPageAsSimpleImage(
-                mainPDF,
-                pdfDoc,
-                pageNum,
-                currentY
+                fileForSurat,
+                'PDF Document',
+                pageWidth,
+                pageHeight
               );
             }
-            console.log('   ✅ Successfully embedded PDF pages');
-          } catch (embedError) {
-            console.error(
-              '   ❌ Failed to embed PDF, using fallback:',
-              embedError
-            );
+          } else {
+            console.log('   ❓ Unknown file type, using fallback');
             addFileInfoPage(
               mainPDF,
               'Bukti Surat Perintah Operasional',
               fileForSurat,
-              'PDF Document',
+              'File',
               pageWidth,
               pageHeight
             );
@@ -1142,7 +1492,7 @@ const ListKPP = () => {
             mainPDF,
             'Bukti Surat Perintah Operasional',
             fileForSurat,
-            'PDF Document',
+            'File',
             pageWidth,
             pageHeight
           );
@@ -1166,7 +1516,10 @@ const ListKPP = () => {
         fileForRondown !== 'undefined'
       ) {
         const fileInfo = getFileUrlAndType(fileForRondown, 'rondown');
+
         if (fileInfo && fileInfo.url) {
+          console.log(`   🔍 File type detected: ${fileInfo.fileType}`);
+
           if (fileInfo.fileType === 'image') {
             console.log('   🖼️ Embedding image file...');
             await addImageAsPage(
@@ -1176,8 +1529,8 @@ const ListKPP = () => {
               pageWidth,
               pageHeight
             );
-          } else {
-            console.log('   🖼️ Embedding PDF file...');
+          } else if (fileInfo.fileType === 'pdf') {
+            console.log('   📑 Embedding PDF file...');
             try {
               const pdfBytes = await downloadFile(fileInfo.url);
               const pdfDoc = await PDFDocument.load(pdfBytes);
@@ -1214,6 +1567,16 @@ const ListKPP = () => {
                 pageHeight
               );
             }
+          } else {
+            console.log('   ❓ Unknown file type, using fallback');
+            addFileInfoPage(
+              mainPDF,
+              'Bukti Rondown Acara Harian',
+              fileForRondown,
+              'File',
+              pageWidth,
+              pageHeight
+            );
           }
         } else {
           addFileInfoPage(
@@ -1233,7 +1596,7 @@ const ListKPP = () => {
         );
       }
 
-      // STEP 4: HALAMAN 4+ - BUKTI DUKUNG ACARA
+      // STEP 4: HALAMAN 4+ - BUKTI DUKUNG ACARA (tetap sama)
       console.log(
         `🎯 ===== HALAMAN 4+: ${acaraWithKendala.length} BUKTI DUKUNG =====`
       );
@@ -1257,7 +1620,7 @@ const ListKPP = () => {
                   pageWidth,
                   pageHeight
                 );
-              } else {
+              } else if (fileInfo.fileType === 'pdf') {
                 try {
                   const pdfBytes = await downloadFile(fileInfo.url);
                   const pdfDoc = await PDFDocument.load(pdfBytes);
@@ -1331,6 +1694,16 @@ const ListKPP = () => {
                     pageHeight
                   );
                 }
+              } else {
+                addFileInfoPageWithAcaraInfo(
+                  mainPDF,
+                  `Bukti Dukung: ${acara.namaAcara}`,
+                  acara.buktiDukung,
+                  'File',
+                  acara,
+                  pageWidth,
+                  pageHeight
+                );
               }
             } else {
               addFileInfoPageWithAcaraInfo(
@@ -1361,12 +1734,9 @@ const ListKPP = () => {
         );
       }
 
-      // =============================================
-      // STEP 5: TAMBAHKAN FOOTER KE SEMUA HALAMAN SECARA TERPUSAT
-      // =============================================
+      // STEP 5: TAMBAHKAN FOOTER KE SEMUA HALAMAN
       const totalPages = mainPDF.internal.getNumberOfPages();
 
-      // Tambahkan footer ke semua halaman HANYA SATU KALI
       for (let i = 1; i <= totalPages; i++) {
         mainPDF.setPage(i);
         addStandardFooter(mainPDF, i, totalPages);
@@ -1435,20 +1805,19 @@ const ListKPP = () => {
       <div className="container-fluid">
         <h1 className="title">Notebook of Technical Director</h1>
 
-        <div className="alert alert-info d-flex justify-content-between align-items-center">
+        <div className="alert alert-info d-flex justify-content-between align-items-center sub-title">
           <span>
             👤 Login sebagai: <strong>{user?.name}</strong>
+            {/* <br />
+            <small className={isConnected ? 'text-success' : 'text-warning'}>
+              {isConnected ? '🟢 Terhubung Real-time' : '🟡 Manual Mode'}
+            </small>
             <br />
+            <small className="text-info">🔄 Auto token refresh aktif</small> */}
           </span>
           <div>
-            <button
-              className="btn btn-outline-primary me-2"
-              onClick={fetchPDUData}
-            >
-              🔄 Refresh
-            </button>
             <button className="btn btn-outline-danger" onClick={handleLogout}>
-              🚪 Logout
+              <img src={Logout} alt="Logout" className="icon me-2" /> Logout
             </button>
           </div>
         </div>
@@ -1456,7 +1825,7 @@ const ListKPP = () => {
         {dataLoading && (
           <div className="alert alert-info text-center">
             <i className="fas fa-spinner fa-spin me-2"></i>
-            Memuat data...
+            {isConnected ? 'Memuat data real-time...' : 'Memuat data...'}
           </div>
         )}
 
@@ -1534,6 +1903,11 @@ const ListKPP = () => {
           <div className="mt-3 text-muted text-center">
             📊 Menampilkan {pduData.length} data PDU • 🎭 Total{' '}
             {acaraData.length} acara dalam sistem
+            {isConnected && (
+              <span className="text-success d-block">
+                💫 Real-time updates aktif - Data terupdate otomatis
+              </span>
+            )}
           </div>
         )}
       </div>

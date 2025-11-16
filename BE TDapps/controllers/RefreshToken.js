@@ -29,7 +29,7 @@ export const refreshToken = async (req, res) => {
         const accessToken = jwt.sign(
           { userId, name, username, role },
           process.env.ACCESS_TOKEN_SECRET,
-          { expiresIn: '15m' } // bisa kamu ubah durasinya
+          { expiresIn: '1d' } // bisa kamu ubah durasinya
         );
 
         res.json({ accessToken });

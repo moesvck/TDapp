@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { getToken, setToken } from '../services/pduService';
+import '../assets/css/createedit.css';
 
 const CreateEdit = () => {
   const [addPDU, setAddPDU] = useState(false);
@@ -36,14 +37,12 @@ const CreateEdit = () => {
 
   // Fungsi validasi file
   const validateFile = (file, fieldName) => {
-    // Validasi tipe file
     if (!ALLOWED_FILE_TYPES.all.includes(file.type)) {
       throw new Error(
         `${fieldName} hanya menerima file gambar (JPG, JPEG, PNG) dan PDF`
       );
     }
 
-    // Validasi ukuran file
     if (file.size > MAX_FILE_SIZE) {
       throw new Error(`${fieldName} maksimal 10MB`);
     }
@@ -60,16 +59,15 @@ const CreateEdit = () => {
   const refreshToken = async () => {
     try {
       console.log('Attempting to refresh token...');
+
+      // ✅ Request tanpa Authorization header, karena refresh token ada di cookies
       const response = await axios.get('http://localhost:3000/token', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        withCredentials: true, // ✅ Penting untuk mengirim cookies
       });
 
-      const newToken = response.data.token;
+      const newToken = response.data.accessToken; // ✅ Perhatikan: accessToken, bukan token
       console.log('Token refreshed successfully');
 
-      // Simpan token baru
       setToken(newToken);
       login(newToken);
 
@@ -83,22 +81,17 @@ const CreateEdit = () => {
   // Fungsi untuk membuat request dengan auto refresh token
   const makeAuthenticatedRequest = async (requestFn) => {
     try {
-      // Coba request pertama
       return await requestFn();
     } catch (error) {
-      // Jika error 401 (Unauthorized), coba refresh token
       if (error.response?.status === 401) {
         console.log('Token expired, attempting refresh...');
         try {
           const newToken = await refreshToken();
 
-          // Coba request lagi dengan token baru
+          // ✅ Recreate request function dengan token baru
           const retryRequest = async () => {
-            // Recreate the request function with new token
-            if (typeof requestFn === 'function') {
-              return await requestFn();
-            }
-            return requestFn;
+            // Karena token sudah disimpan di context, request berikutnya akan otomatis menggunakan token baru
+            return await requestFn();
           };
 
           return await retryRequest();
@@ -114,14 +107,12 @@ const CreateEdit = () => {
   };
 
   const checkAuthentication = async () => {
-    // Cek 1: Apakah ada token di localStorage?
     if (!token) {
       console.log('No token found, redirecting to login');
       navigate('/login');
       return;
     }
 
-    // Cek 2: Apakah user authenticated di context?
     if (!isAuthenticated) {
       console.log('User not authenticated in context, redirecting to login');
       navigate('/login');
@@ -129,7 +120,6 @@ const CreateEdit = () => {
     }
 
     try {
-      // Cek 3: Coba fetch data PDU untuk verifikasi token dengan auto refresh
       await makeAuthenticatedRequest(async () => {
         await fetchTodayPDUList();
       });
@@ -182,7 +172,6 @@ const CreateEdit = () => {
 
       let todayPDUList = response.data.data || [];
 
-      // Jika response masih mengembalikan data bulanan, filter manual
       if (
         todayPDUList.some((pdu) => {
           const pduDate = new Date(pdu.tanggal).toISOString().split('T')[0];
@@ -196,7 +185,6 @@ const CreateEdit = () => {
     } catch (error) {
       console.error('Error fetching PDU with date filter:', error);
 
-      // Fallback: fetch semua data lalu filter manual
       try {
         const currentToken = getToken();
         const response = await axios.get('http://localhost:3000/pdu', {
@@ -247,7 +235,6 @@ const CreateEdit = () => {
     }
 
     try {
-      // Tentukan nama field untuk pesan error
       let fieldName = '';
       switch (name) {
         case 'buktiSuratPerintahOperasional':
@@ -263,17 +250,14 @@ const CreateEdit = () => {
           fieldName = 'File';
       }
 
-      // Validasi file
       validateFile(file, fieldName);
 
-      // Jika validasi berhasil, set file
       setFormData((prev) => ({
         ...prev,
         [name]: file,
       }));
     } catch (error) {
       alert(error.message);
-      // Reset input file
       e.target.value = '';
       setFormData((prev) => ({
         ...prev,
@@ -341,7 +325,6 @@ const CreateEdit = () => {
       }
     }
 
-    // Validasi file untuk PDU baru
     if (addPDU) {
       if (!formData.buktiSuratPerintahOperasional) {
         alert('Surat Perintah Operasional wajib diupload');
@@ -356,7 +339,6 @@ const CreateEdit = () => {
     setLoading(true);
 
     try {
-      // Gunakan makeAuthenticatedRequest untuk handle token refresh otomatis
       await makeAuthenticatedRequest(async () => {
         const currentToken = getToken();
         const headers = {
@@ -473,7 +455,6 @@ const CreateEdit = () => {
     navigate('/');
   };
 
-  // Tampilkan loading sampai authentication check selesai
   if (!authChecked) {
     return (
       <div className="container mt-4">
@@ -493,280 +474,311 @@ const CreateEdit = () => {
   }
 
   return (
-    <div className="container mt-4">
-      <form className="formheader" onSubmit={handleSubmit}>
-        <h3 className="h3header">Create Data</h3>
-        <p className="textformheader">
-          If you have any question or issue's to use our product. Fill the form
-          below. We'll help you.
-        </p>
+    <div className="container create-edit-container">
+      <div className="form-card">
+        <form className="form-content" onSubmit={handleSubmit}>
+          <div className="form-header">
+            <h3 className="form-title">Create Data</h3>
+            <p className="form-subtitle">
+              Enter the required information below to create new data. Please
+              fill out the form completely.
+            </p>
+          </div>
 
-        <div className="row">
-          {/* Nama PDU Section */}
-          <div className="mb-3 col-12">
-            <div className="d-flex align-items-center gap-3">
-              <label className="form-label mb-0 flex-grow-1">
-                Nama PDU<span className="text-danger">*</span>
-              </label>
+          <div className="form-body">
+            {/* Nama PDU Section */}
+            <div className="form-section">
+              <div className="pdu-selection">
+                <div className="pdu-header">
+                  <label className="form-label">
+                    Nama PDU<span className="text-danger">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    className="btn-toggle-pdu"
+                    onClick={() => setAddPDU(!addPDU)}
+                  >
+                    {addPDU ? 'Pilih PDU yang Ada' : 'Buat PDU Baru'}
+                  </button>
+                </div>
 
-              {addPDU ? (
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Enter name PDU"
-                  name="namePDU"
-                  value={formData.namePDU}
-                  onChange={handleInputChange}
-                  required
-                />
-              ) : (
-                <select
-                  className="form-select"
-                  name="idPDU"
-                  value={formData.idPDU}
-                  onChange={handleInputChange}
-                  required
-                  disabled={pduList.length === 0}
-                >
-                  <option value="">
-                    Pilih PDU ({pduList.length} tersedia hari ini)
-                  </option>
-                  {pduList.map((pdu) => (
-                    <option key={pdu.id} value={pdu.id}>
-                      {pdu.namePDU}
-                    </option>
-                  ))}
-                </select>
-              )}
+                {addPDU ? (
+                  <div className="pdu-new">
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Enter name PDU"
+                      name="namePDU"
+                      value={formData.namePDU}
+                      onChange={handleInputChange}
+                      autocomplete="off"
+                      required
+                    />
+                    <small className="form-text">Masukkan nama PDU baru</small>
+                  </div>
+                ) : (
+                  <div className="pdu-existing">
+                    <select
+                      className="form-select"
+                      name="idPDU"
+                      value={formData.idPDU}
+                      onChange={handleInputChange}
+                      autocomplete="off"
+                      required
+                      disabled={pduList.length === 0}
+                    >
+                      <option value="">
+                        Pilih PDU ({pduList.length} tersedia hari ini)
+                      </option>
+                      {pduList.map((pdu) => (
+                        <option key={pdu.id} value={pdu.id}>
+                          {pdu.namePDU}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="form-text">
+                      Hanya menampilkan PDU yang dibuat hari ini (
+                      {getTodayDate()})
+                    </small>
+                  </div>
+                )}
+              </div>
+            </div>
 
+            {/* Section untuk upload dokumen PDU BARU */}
+            {addPDU && (
+              <div className="form-section">
+                <h5 className="section-title">Dokumen PDU Baru</h5>
+                <div className="row g-3">
+                  <div className="col-12 col-md-6">
+                    <label className="form-label">
+                      Upload Surat Perintah Operasional
+                      <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      className="form-control"
+                      type="file"
+                      name="buktiSuratPerintahOperasional"
+                      onChange={handleFileChange}
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      required={addPDU}
+                    />
+                    <small className="form-text">
+                      Format: PDF, JPG, JPEG, PNG (Maksimal 10MB)
+                    </small>
+                  </div>
+                  <div className="col-12 col-md-6">
+                    <label className="form-label">
+                      Upload Rundown Acara Harian
+                      <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      className="form-control"
+                      type="file"
+                      name="buktiRondownAcaraHarian"
+                      onChange={handleFileChange}
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      required={addPDU}
+                    />
+                    <small className="form-text">
+                      Format: PDF, JPG, JPEG, PNG (Maksimal 10MB)
+                    </small>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Section untuk data ACARA - SELALU TAMPIL */}
+            <div className="form-section">
+              <h5 className="section-title">Data Acara</h5>
+              <div className="row g-3">
+                {/* Nama Acara */}
+                <div className="col-12 col-md-6">
+                  <label className="form-label">
+                    Nama Acara<span className="text-danger">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Enter nama acara"
+                    name="namaAcara"
+                    value={formData.namaAcara}
+                    onChange={handleInputChange}
+                    autocomplete="off"
+                    required
+                  />
+                </div>
+
+                {/* Tipe Acara */}
+                <div className="col-12 col-md-6">
+                  <label className="form-label">
+                    Tipe Acara<span className="text-danger">*</span>
+                  </label>
+                  <div className="radio-group form-check form-check-inline">
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="radio"
+                        name="tipeAcara"
+                        value="Live"
+                        id="live"
+                        checked={formData.tipeAcara === 'Live'}
+                        onChange={handleInputChange}
+                        required
+                      />
+                      <label className="form-check-label" htmlFor="live">
+                        Live
+                      </label>
+                    </div>
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="radio"
+                        name="tipeAcara"
+                        value="Tipping"
+                        id="tipping"
+                        checked={formData.tipeAcara === 'Tipping'}
+                        onChange={handleInputChange}
+                      />
+                      <label className="form-check-label" htmlFor="tipping">
+                        Tipping
+                      </label>
+                    </div>
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="radio"
+                        name="tipeAcara"
+                        value="Playback"
+                        id="playback"
+                        checked={formData.tipeAcara === 'Playback'}
+                        onChange={handleInputChange}
+                      />
+                      <label className="form-check-label" htmlFor="playback">
+                        Playback
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Kendala */}
+                <div className="col-12">
+                  <label className="form-label">
+                    Apakah ada kendala?<span className="text-danger">*</span>
+                  </label>
+                  <div className="radio-group form-check form-check-inline">
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="radio"
+                        name="kendala"
+                        value="false"
+                        id="tidakKendala"
+                        checked={formData.kendala === false}
+                        onChange={handleKendalaChange}
+                        required
+                      />
+                      <label
+                        className="form-check-label"
+                        htmlFor="tidakKendala"
+                      >
+                        Tidak
+                      </label>
+                    </div>
+                    <div className="form-check">
+                      <input
+                        className="form-check-input"
+                        type="radio"
+                        name="kendala"
+                        value="true"
+                        id="adaKendala"
+                        checked={formData.kendala === true}
+                        onChange={handleKendalaChange}
+                      />
+                      <label className="form-check-label" htmlFor="adaKendala">
+                        Ya
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bukti Dukungan Kendala - Hanya tampil jika kendala = true */}
+                {formData.kendala === true && (
+                  <div className="col-12 col-md-6">
+                    <label className="form-label">
+                      Bukti Dukungan Kendala
+                      <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      className="form-control"
+                      type="file"
+                      name="buktiDukung"
+                      onChange={handleFileChange}
+                      accept=".jpg,.jpeg,.png,.pdf"
+                      required={formData.kendala === true}
+                    />
+                    <small className="form-text">
+                      Upload bukti dukungan kendala (wajib) - Format: JPG, JPEG,
+                      PNG, PDF (Maksimal 10MB)
+                    </small>
+                  </div>
+                )}
+
+                {/* Keterangan Kendala - Hanya tampil jika kendala = true */}
+                {formData.kendala === true && (
+                  <div className="col-12">
+                    <label className="form-label">
+                      Kendala terkait Acara
+                      <span className="text-danger">*</span>
+                    </label>
+                    <textarea
+                      className="form-control"
+                      rows="3"
+                      name="keteranganKendala"
+                      value={formData.keteranganKendala}
+                      onChange={handleInputChange}
+                      placeholder="Jelaskan kendala yang dialami..."
+                      required={formData.kendala === true}
+                    ></textarea>
+                    <small className="form-text">
+                      Jelaskan kendala yang dialami (wajib)
+                    </small>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <div className="form-actions">
+              <button
+                type="submit"
+                className="btn btn-primary btn-submit"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-2"
+                      role="status"
+                    ></span>
+                    Loading...
+                  </>
+                ) : (
+                  'Create Data'
+                )}
+              </button>
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => setAddPDU(!addPDU)}
+                className="btn btn-outline-secondary btn-cancel"
+                onClick={handleCancel}
+                disabled={loading}
               >
-                {addPDU ? '-' : '+'}
+                Cancel
               </button>
             </div>
-            <small className="text-muted">
-              {addPDU
-                ? 'Masukkan nama PDU baru'
-                : `Hanya menampilkan PDU yang dibuat hari ini (${getTodayDate()})`}
-            </small>
           </div>
-
-          {/* Section untuk upload dokumen PDU BARU */}
-          {addPDU && (
-            <>
-              <div className="mb-3 col-md-6">
-                <label className="form-label">
-                  Upload Surat Perintah Operasional
-                  <span className="text-danger">*</span>
-                </label>
-                <input
-                  className="form-control"
-                  type="file"
-                  name="buktiSuratPerintahOperasional"
-                  onChange={handleFileChange}
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  required={addPDU}
-                />
-                <small className="text-muted">
-                  Format: PDF, JPG, JPEG, PNG (Maksimal 10MB)
-                </small>
-              </div>
-              <div className="mb-3 col-md-6">
-                <label className="form-label">
-                  Upload Rundown Acara Harian
-                  <span className="text-danger">*</span>
-                </label>
-                <input
-                  className="form-control"
-                  type="file"
-                  name="buktiRondownAcaraHarian"
-                  onChange={handleFileChange}
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  required={addPDU}
-                />
-                <small className="text-muted">
-                  Format: PDF, JPG, JPEG, PNG (Maksimal 10MB)
-                </small>
-              </div>
-            </>
-          )}
-
-          {/* Section untuk data ACARA - SELALU TAMPIL */}
-          <>
-            {/* Nama Acara */}
-            <div className="mb-3 col-md-6">
-              <label className="form-label">
-                Nama Acara<span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="Enter nama acara"
-                name="namaAcara"
-                value={formData.namaAcara}
-                onChange={handleInputChange}
-                required
-              />
-            </div>
-
-            {/* Tipe Acara */}
-            <div className="mb-3 col-md-6">
-              <label className="form-label d-block">
-                Tipe Acara<span className="text-danger">*</span>
-              </label>
-              <div className="d-flex gap-3 flex-wrap">
-                <div className="form-check">
-                  <input
-                    className="form-check-input"
-                    type="radio"
-                    name="tipeAcara"
-                    value="Live"
-                    id="live"
-                    checked={formData.tipeAcara === 'Live'}
-                    onChange={handleInputChange}
-                    required
-                  />
-                  <label className="form-check-label" htmlFor="live">
-                    Live
-                  </label>
-                </div>
-                <div className="form-check">
-                  <input
-                    className="form-check-input"
-                    type="radio"
-                    name="tipeAcara"
-                    value="Tipping"
-                    id="tipping"
-                    checked={formData.tipeAcara === 'Tipping'}
-                    onChange={handleInputChange}
-                  />
-                  <label className="form-check-label" htmlFor="tipping">
-                    Tipping
-                  </label>
-                </div>
-                <div className="form-check">
-                  <input
-                    className="form-check-input"
-                    type="radio"
-                    name="tipeAcara"
-                    value="Playback"
-                    id="playback"
-                    checked={formData.tipeAcara === 'Playback'}
-                    onChange={handleInputChange}
-                  />
-                  <label className="form-check-label" htmlFor="playback">
-                    Playback
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* Kendala */}
-            <div className="mb-3 col-12">
-              <label className="form-label">
-                Apakah ada kendala?<span className="text-danger">*</span>
-              </label>
-              <div className="d-flex gap-3">
-                <div className="form-check">
-                  <input
-                    className="form-check-input"
-                    type="radio"
-                    name="kendala"
-                    value="false"
-                    id="tidakKendala"
-                    checked={formData.kendala === false}
-                    onChange={handleKendalaChange}
-                    required
-                  />
-                  <label className="form-check-label" htmlFor="tidakKendala">
-                    Tidak
-                  </label>
-                </div>
-                <div className="form-check">
-                  <input
-                    className="form-check-input"
-                    type="radio"
-                    name="kendala"
-                    value="true"
-                    id="adaKendala"
-                    checked={formData.kendala === true}
-                    onChange={handleKendalaChange}
-                  />
-                  <label className="form-check-label" htmlFor="adaKendala">
-                    Ya
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* Bukti Dukungan Kendala - Hanya tampil jika kendala = true */}
-            {formData.kendala === true && (
-              <div className="mb-3 col-md-6">
-                <label className="form-label">
-                  Bukti Dukungan Kendala
-                  <span className="text-danger">*</span>
-                </label>
-                <input
-                  className="form-control"
-                  type="file"
-                  name="buktiDukung"
-                  onChange={handleFileChange}
-                  accept=".jpg,.jpeg,.png,.pdf"
-                  required={formData.kendala === true}
-                />
-                <small className="text-muted">
-                  Upload bukti dukungan kendala (wajib) - Format: JPG, JPEG,
-                  PNG, PDF (Maksimal 10MB)
-                </small>
-              </div>
-            )}
-
-            {/* Keterangan Kendala - Hanya tampil jika kendala = true */}
-            {formData.kendala === true && (
-              <div className="mb-3 col-12">
-                <label className="form-label">
-                  Kendala terkait Acara
-                  <span className="text-danger">*</span>
-                </label>
-                <textarea
-                  className="form-control"
-                  rows="3"
-                  name="keteranganKendala"
-                  value={formData.keteranganKendala}
-                  onChange={handleInputChange}
-                  placeholder="Jelaskan kendala yang dialami..."
-                  required={formData.kendala === true}
-                ></textarea>
-                <small className="text-muted">
-                  Jelaskan kendala yang dialami (wajib)
-                </small>
-              </div>
-            )}
-          </>
-
-          {/* Submit Button */}
-          <div className="mb-3 col-12">
-            <button
-              type="submit"
-              className="btn btn-success me-2"
-              disabled={loading}
-            >
-              {loading ? 'Loading...' : 'Create'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleCancel}
-              disabled={loading}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 };
